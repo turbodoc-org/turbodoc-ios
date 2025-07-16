@@ -10,9 +10,12 @@ import SwiftData
 
 @main
 struct TurbodocApp: App {
+    @StateObject private var authService = AuthenticationService()
+    
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            User.self,
+            BookmarkItem.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -25,7 +28,8 @@ struct TurbodocApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
+                .environmentObject(authService)
         }
         .modelContainer(sharedModelContainer)
     }
