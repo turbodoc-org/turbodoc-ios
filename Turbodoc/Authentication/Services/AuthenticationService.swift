@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Supabase
 
 @MainActor
 class AuthenticationService: ObservableObject {
@@ -8,15 +9,13 @@ class AuthenticationService: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     
-    // Mock implementation for Phase 1 - will be replaced with real Supabase in Phase 2
-    private let isMockMode = true
+    private let supabaseClient: SupabaseClient
+    private var authToken: String? = nil
     
     init() {
-        // Check if Supabase is configured
-        if !SupabaseConfig.isConfigured {
-            print("⚠️ Supabase not configured. Using mock authentication.")
-            print("📖 See SETUP.md for configuration instructions.")
-        }
+        self.supabaseClient = SupabaseClient(
+            supabaseURL: SupabaseConfig.supabaseURL,
+            supabaseKey: SupabaseConfig.anonKey)
         
         Task {
             await checkAuthStatus()
@@ -27,21 +26,20 @@ class AuthenticationService: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        // Mock authentication - simulate network delay
-        try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-        
-        if isMockMode {
-            // Mock successful login
-            let user = User(id: UUID().uuidString, email: email)
+        do {
+            let response = try await supabaseClient.auth.signIn(email: email, password: password)
+            let user = User(id: response.user.id.uuidString, email: response.user.email ?? email)
+
             currentUser = user
             isAuthenticated = true
             
-            // Save user to local storage
-            // try DataManager.shared.saveUser(user)
-        } else {
-            // TODO: Implement real Supabase authentication
-            errorMessage = "Real Supabase authentication not yet implemented"
-            throw AuthenticationError.notImplemented
+            authToken = response.accessToken
+            
+            try DataManager.shared.saveUser(user)
+            
+        } catch {
+            errorMessage = "Invalid email or password"
+            throw AuthenticationError.invalidCredentials
         }
         
         isLoading = false
@@ -51,21 +49,21 @@ class AuthenticationService: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        // Mock authentication - simulate network delay
-        try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-        
-        if isMockMode {
-            // Mock successful signup
-            let user = User(id: UUID().uuidString, email: email)
+        do {
+            let response = try await supabaseClient.auth.signUp(email: email, password: password)
+            
+            let user = User(id: response.user.id.uuidString, email: response.user.email ?? email)
+            
             currentUser = user
             isAuthenticated = true
             
-            // Save user to local storage
-            // try DataManager.shared.saveUser(user)
-        } else {
-            // TODO: Implement real Supabase authentication
-            errorMessage = "Real Supabase authentication not yet implemented"
-            throw AuthenticationError.notImplemented
+            authToken = response.session?.accessToken
+            
+            try DataManager.shared.saveUser(user)
+            
+        } catch {
+            errorMessage = "Failed to create account"
+            throw AuthenticationError.networkError
         }
         
         isLoading = false
@@ -75,21 +73,20 @@ class AuthenticationService: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        // Mock signout - simulate network delay
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-        
-        if isMockMode {
-            // Clear local data
+        do {
+            try await supabaseClient.auth.signOut()
+            
             if let user = currentUser {
-                // try DataManager.shared.deleteUser(user)
+                try DataManager.shared.deleteUser(user)
             }
             
             currentUser = nil
             isAuthenticated = false
-        } else {
-            // TODO: Implement real Supabase signout
-            errorMessage = "Real Supabase authentication not yet implemented"
-            throw AuthenticationError.notImplemented
+            authToken = nil
+            
+        } catch {
+            errorMessage = "Failed to sign out"
+            throw AuthenticationError.networkError
         }
         
         isLoading = false
@@ -99,41 +96,46 @@ class AuthenticationService: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        // Mock password reset - simulate network delay
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-        
-        if isMockMode {
-            // Mock successful password reset
-            // In real implementation, this would send an email
-        } else {
-            // TODO: Implement real Supabase password reset
-            errorMessage = "Real Supabase authentication not yet implemented"
-            throw AuthenticationError.notImplemented
+        do {
+            try await supabaseClient.auth.resetPasswordForEmail(email)
+            
+        } catch {
+            errorMessage = "Failed to send reset email"
+            throw AuthenticationError.networkError
         }
         
         isLoading = false
     }
     
     func getCurrentUser() async throws -> User? {
-        if isMockMode {
+        do {
+            let supabaseUser = try await supabaseClient.auth.user()
+            return User(id: supabaseUser.id.uuidString, email: supabaseUser.email ?? "")
+        } catch {
             return currentUser
-        } else {
-            // TODO: Implement real Supabase user fetching
-            return nil
         }
     }
     
     func checkAuthStatus() async {
-        if isMockMode {
-            // Check if we have a saved user in local storage
-            // For now, just start with logged out state
+        do {
+            let session = try await supabaseClient.auth.session
+            
+            let user = User(id: session.user.id.uuidString, email: session.user.email ?? "")
+
+            currentUser = user
+            isAuthenticated = true
+            authToken = session.accessToken
+            
+            try DataManager.shared.saveUser(user)
+        } catch {
             isAuthenticated = false
             currentUser = nil
-        } else {
-            // TODO: Implement real Supabase auth status check
-            isAuthenticated = false
-            currentUser = nil
+            authToken = nil
         }
+    }
+    
+    func getCurrentAuthToken() -> String? {
+        return authToken
     }
 }
 

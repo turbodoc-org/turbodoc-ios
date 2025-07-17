@@ -3,74 +3,146 @@ import Foundation
 class APIService {
     static let shared = APIService()
     
+    private let networkService = NetworkService.shared
+    
     private init() {}
     
-    // MARK: - Bookmark Operations (Mock Implementation)
+    // Configure with auth service reference
+    func configure(authService: AuthenticationService) {
+        networkService.setAuthService(authService)
+    }
+    
+    // MARK: - Bookmark Operations
     
     func fetchBookmarks(userId: String) async throws -> [BookmarkItem] {
-        // Simulate network delay
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        let endpoint = APIConfig.Endpoints.bookmarks
         
-        // Return empty array for Phase 1
-        return []
+        do {
+            let response = try await networkService.performRequest(
+                endpoint: endpoint,
+                method: .GET,
+                responseType: APIBookmarkListResponse.self
+            )
+            
+            return response.bookmarks.map { $0.toBookmarkItem() }
+        } catch {
+            throw APIError.networkError
+        }
     }
     
     func saveBookmark(_ bookmark: BookmarkItem) async throws -> BookmarkItem {
-        // Simulate network delay
-        try await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+        let endpoint = APIConfig.Endpoints.bookmarks
+        let requestBody = APIBookmarkRequest(from: bookmark)
         
-        // Mock save - just return the item
-        return bookmark
+        do {
+            let bodyData = try networkService.encodeBody(requestBody)
+            let response = try await networkService.performRequest(
+                endpoint: endpoint,
+                method: .POST,
+                body: bodyData,
+                responseType: APIBookmarkResponse.self
+            )
+            
+            return response.toBookmarkItem()
+        } catch {
+            throw APIError.networkError
+        }
     }
     
     func updateBookmark(_ bookmark: BookmarkItem) async throws -> BookmarkItem {
-        // Simulate network delay
-        try await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+        let endpoint = APIConfig.Endpoints.bookmarkById + bookmark.id.uuidString
+        let requestBody = APIBookmarkRequest(from: bookmark)
         
-        // Mock update - just return the item
-        return bookmark
+        do {
+            let bodyData = try networkService.encodeBody(requestBody)
+            let response = try await networkService.performRequest(
+                endpoint: endpoint,
+                method: .PUT,
+                body: bodyData,
+                responseType: APIBookmarkResponse.self
+            )
+            
+            return response.toBookmarkItem()
+        } catch {
+            throw APIError.networkError
+        }
     }
     
     func deleteBookmark(id: UUID) async throws {
-        // Simulate network delay
-        try await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+        let endpoint = APIConfig.Endpoints.bookmarkById + id.uuidString
         
-        // Mock delete - no-op for now
+        do {
+            try await networkService.performRequest(
+                endpoint: endpoint,
+                method: .DELETE
+            )
+        } catch {
+            throw APIError.networkError
+        }
     }
     
-    // MARK: - Search Operations (Mock Implementation)
+    // MARK: - Search Operations
     
     func searchBookmarks(query: String, userId: String) async throws -> [BookmarkItem] {
-        // Simulate network delay
-        try await Task.sleep(nanoseconds: 400_000_000) // 0.4 seconds
+        let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let endpoint = APIConfig.Endpoints.bookmarks + "?search=\(encodedQuery)"
         
-        // Return empty array for Phase 1
-        return []
+        do {
+            let response = try await networkService.performRequest(
+                endpoint: endpoint,
+                method: .GET,
+                responseType: APIBookmarkListResponse.self
+            )
+            
+            return response.bookmarks.map { $0.toBookmarkItem() }
+        } catch {
+            throw APIError.networkError
+        }
     }
     
-    // MARK: - User Operations (Mock Implementation)
+    // MARK: - User Operations
     
     func updateUserProfile(userId: String, name: String?) async throws -> User {
-        // Simulate network delay
-        try await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+        let endpoint = APIConfig.Endpoints.userById + userId
+        let requestBody = APIUserUpdateRequest(name: name, email: nil)
         
-        // Mock update - create a mock user
-        let user = User(id: userId, email: "mock@example.com", name: name)
-        return user
+        do {
+            let bodyData = try networkService.encodeBody(requestBody)
+            let response = try await networkService.performRequest(
+                endpoint: endpoint,
+                method: .PUT,
+                body: bodyData,
+                responseType: APIUserResponse.self
+            )
+            
+            return response.toUser()
+        } catch {
+            throw APIError.networkError
+        }
     }
     
-    // MARK: - Statistics Operations (Mock Implementation)
+    // MARK: - Statistics Operations
     
     func getUserStats(userId: String) async throws -> UserStats {
-        // Simulate network delay
-        try await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
+        let endpoint = APIConfig.Endpoints.userById + userId
         
-        // Return mock stats
-        return UserStats(
-            bookmarkCount: 0,
-            tagCount: 0,
-            totalSize: 0
-        )
+        do {
+            let _ = try await networkService.performRequest(
+                endpoint: endpoint,
+                method: .GET,
+                responseType: APIUserResponse.self
+            )
+            
+            // For now, return mock stats since the API doesn't have a stats endpoint
+            // This can be enhanced when a dedicated stats endpoint is added
+            return UserStats(
+                bookmarkCount: 0,
+                tagCount: 0,
+                totalSize: 0
+            )
+        } catch {
+            throw APIError.networkError
+        }
     }
 }
 

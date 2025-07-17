@@ -30,6 +30,10 @@ struct TurbodocApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(authService)
+                .onAppear {
+                    // Configure API service with auth service
+                    APIService.shared.configure(authService: authService)
+                }
         }
         .modelContainer(sharedModelContainer)
     }
