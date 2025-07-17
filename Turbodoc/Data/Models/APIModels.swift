@@ -21,11 +21,19 @@ struct APIBookmarkResponse: Codable {
     let user_id: String
     let title: String
     let url: String?
-    let time_added: String
-    let tags: [String]
+    let time_added: Int
+    private let tags: TagsContainer?
     let status: String
     let created_at: String
     let updated_at: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id, user_id, title, url, time_added, tags, status, created_at, updated_at
+    }
+    
+    var tagsList: [String] {
+        return tags?.array ?? []
+    }
     
     func toBookmarkItem() -> BookmarkItem {
         let bookmark = BookmarkItem(
@@ -40,15 +48,10 @@ struct APIBookmarkResponse: Codable {
             bookmark.id = uuid
         }
         
-        // Parse time_added
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'"
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        if let date = formatter.date(from: time_added) {
-            bookmark.timeAdded = date
-        }
+        // Parse time_added as Unix timestamp
+        bookmark.timeAdded = Date(timeIntervalSince1970: TimeInterval(time_added))
         
-        bookmark.tags = tags
+        bookmark.tags = tagsList
         bookmark.status = BookmarkItem.ItemStatus(rawValue: status) ?? .unread
         
         return bookmark
@@ -56,10 +59,10 @@ struct APIBookmarkResponse: Codable {
 }
 
 struct APIBookmarkListResponse: Codable {
-    let bookmarks: [APIBookmarkResponse]
-    let total: Int
-    let page: Int
-    let per_page: Int
+    let data: [APIBookmarkResponse]
+    let total: Int?
+    let page: Int?
+    let per_page: Int?
 }
 
 struct APIUserResponse: Codable {
@@ -91,4 +94,29 @@ struct APIUserResponse: Codable {
 struct APIUserUpdateRequest: Codable {
     let name: String?
     let email: String?
+}
+
+// Helper struct to handle tags field that can be either a string or array
+struct TagsContainer: Codable {
+    let array: [String]
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        
+        if let stringValue = try? container.decode(String.self) {
+            // Handle string format like "marketing|seo"
+            self.array = stringValue.split(separator: "|").map { String($0) }
+        } else if let arrayValue = try? container.decode([String].self) {
+            // Handle array format
+            self.array = arrayValue
+        } else {
+            // Handle null or other cases
+            self.array = []
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(array)
+    }
 }

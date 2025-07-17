@@ -24,7 +24,7 @@ class APIService {
                 responseType: APIBookmarkListResponse.self
             )
             
-            return response.bookmarks.map { $0.toBookmarkItem() }
+            return response.data.map { $0.toBookmarkItem() }
         } catch {
             throw APIError.networkError
         }
@@ -94,7 +94,7 @@ class APIService {
                 responseType: APIBookmarkListResponse.self
             )
             
-            return response.bookmarks.map { $0.toBookmarkItem() }
+            return response.data.map { $0.toBookmarkItem() }
         } catch {
             throw APIError.networkError
         }
