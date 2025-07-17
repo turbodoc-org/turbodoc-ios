@@ -1,14 +1,25 @@
 import Foundation
 
 struct SupabaseConfig {
-    static let url = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String ?? ""
-    static let anonKey = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String ?? ""
+    static let url: String = {
+        if let configURL = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String, !configURL.isEmpty {
+            return configURL
+        }
+        return ProcessInfo.processInfo.environment["SUPABASE_URL"] ?? ""
+    }()
+    
+    static let anonKey: String = {
+        if let configKey = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String, !configKey.isEmpty {
+            return configKey
+        }
+        return ProcessInfo.processInfo.environment["SUPABASE_ANON_KEY"] ?? ""
+    }()
     
     static var supabaseURL: URL {
-        guard !url.isEmpty, let url = URL(string: url) else {
+        guard !url.isEmpty, let supabaseURL = URL(string: url) else {
             fatalError("Invalid or missing Supabase URL. Please check your configuration.")
         }
-        return url
+        return supabaseURL
     }
     
     static var isConfigured: Bool {

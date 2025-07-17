@@ -14,9 +14,10 @@ struct SignInView: View {
                 
                 // Logo/Title
                 VStack(spacing: 10) {
-                    Image(systemName: "bookmark.fill")
-                        .font(.system(size: 60))
-                        .foregroundColor(.blue)
+                    Image("Logo")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 120, height: 120)
                     
                     Text("Turbodoc")
                         .font(.largeTitle)

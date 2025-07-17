@@ -13,9 +13,10 @@ struct ForgotPasswordView: View {
                 
                 // Title
                 VStack(spacing: 10) {
-                    Image(systemName: "lock.rotation")
-                        .font(.system(size: 60))
-                        .foregroundColor(.blue)
+                    Image("Logo")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 120, height: 120)
                     
                     Text("Reset Password")
                         .font(.largeTitle)

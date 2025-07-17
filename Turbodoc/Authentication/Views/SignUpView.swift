@@ -14,6 +14,11 @@ struct SignUpView: View {
                 
                 // Title
                 VStack(spacing: 10) {
+                    Image("Logo")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 120, height: 120)
+                    
                     Text("Create Account")
                         .font(.largeTitle)
                         .fontWeight(.bold)
