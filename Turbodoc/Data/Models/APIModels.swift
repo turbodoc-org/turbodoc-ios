@@ -67,6 +67,10 @@ struct APIBookmarkListResponse: Codable {
     let per_page: Int?
 }
 
+struct APIBookmarkCreateResponse: Codable {
+    let data: APIBookmarkResponse
+}
+
 struct APIBookmarkUpdateResponse: Codable {
     let data: APIBookmarkResponse
 }

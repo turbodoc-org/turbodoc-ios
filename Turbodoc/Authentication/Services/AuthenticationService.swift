@@ -35,12 +35,6 @@ class AuthenticationService: ObservableObject {
             
             authToken = response.accessToken
             
-            // Save to shared keychain for Share Extension
-            try? SharedAuthManager.shared.saveAuthToken(response.accessToken)
-            try? SharedAuthManager.shared.saveUserId(user.id)
-            
-            try DataManager.shared.saveUser(user)
-            
         } catch {
             errorMessage = "Invalid email or password"
             throw AuthenticationError.invalidCredentials
@@ -63,14 +57,6 @@ class AuthenticationService: ObservableObject {
             
             authToken = response.session?.accessToken
             
-            // Save to shared keychain for Share Extension
-            if let token = response.session?.accessToken {
-                try? SharedAuthManager.shared.saveAuthToken(token)
-                try? SharedAuthManager.shared.saveUserId(user.id)
-            }
-            
-            try DataManager.shared.saveUser(user)
-            
         } catch {
             errorMessage = "Failed to create account"
             throw AuthenticationError.networkError
@@ -85,13 +71,6 @@ class AuthenticationService: ObservableObject {
         
         do {
             try await supabaseClient.auth.signOut()
-            
-            if let user = currentUser {
-                try DataManager.shared.deleteUser(user)
-            }
-            
-            // Clear shared keychain
-            try? SharedAuthManager.shared.clearAllCredentials()
             
             currentUser = nil
             isAuthenticated = false
@@ -138,12 +117,6 @@ class AuthenticationService: ObservableObject {
             currentUser = user
             isAuthenticated = true
             authToken = session.accessToken
-            
-            // Save to shared keychain for Share Extension
-            try? SharedAuthManager.shared.saveAuthToken(session.accessToken)
-            try? SharedAuthManager.shared.saveUserId(user.id)
-            
-            try DataManager.shared.saveUser(user)
         } catch {
             isAuthenticated = false
             currentUser = nil

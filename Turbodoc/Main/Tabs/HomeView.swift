@@ -8,6 +8,7 @@ struct HomeView: View {
     @State private var errorMessage: String?
     @State private var showingDeleteConfirmation = false
     @State private var bookmarkToDelete: BookmarkItem?
+    @State private var showingAddBookmark = false
     
     var body: some View {
         NavigationView {
@@ -45,6 +46,24 @@ struct HomeView: View {
                 if let bookmark = bookmarkToDelete {
                     Text("Are you sure you want to delete \"\(bookmark.title)\"? This action cannot be undone.")
                 }
+            }
+            .sheet(isPresented: $showingAddBookmark) {
+                AddBookmarkView(onSave: { url in
+                    addBookmark(url: url)
+                })
+            }
+            .overlay(alignment: .bottomTrailing) {
+                Button(action: { showingAddBookmark = true }) {
+                    Image(systemName: "plus")
+                        .font(.title2)
+                        .foregroundColor(.white)
+                        .frame(width: 56, height: 56)
+                        .background(Color.blue)
+                        .clipShape(Circle())
+                        .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
+                }
+                .padding(.trailing, 20)
+                .padding(.bottom, 20)
             }
         }
     }
@@ -221,6 +240,47 @@ struct HomeView: View {
             } catch {
                 await MainActor.run {
                     self.errorMessage = "Failed to update bookmark: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    
+    private func addBookmark(url: String) {
+        guard let user = authService.currentUser else {
+            errorMessage = "Please sign in to add bookmarks"
+            return
+        }
+        
+        Task {
+            do {                
+                // Fetch page metadata to get the actual title
+                let metadata = try await APIService.shared.fetchOgImage(for: url)
+                let pageTitle = metadata.title?.isEmpty == false ? metadata.title! : "Untitled"
+                
+                // Create bookmark object with actual title
+                let bookmark = BookmarkItem(
+                    title: pageTitle,
+                    url: url,
+                    contentType: .link,
+                    userId: user.id
+                )
+                
+                // Set OG image if available
+                bookmark.ogImageURL = metadata.ogImage
+                
+                // Save to API
+                let savedBookmark = try await APIService.shared.saveBookmark(bookmark)
+                
+                // Update UI
+                await MainActor.run {
+                    self.bookmarks.insert(savedBookmark, at: 0)
+                    self.showingAddBookmark = false
+                }
+                
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = "Failed to add bookmark: \(error.localizedDescription)"
                 }
             }
         }
@@ -440,19 +500,13 @@ struct BookmarkTileView: View {
             }
         }
         .buttonStyle(PlainButtonStyle())
-        .background(
-            LinearGradient(
-                gradient: Gradient(colors: [Color.white, Color.yellow.opacity(0.05)]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.yellow.opacity(0.3), lineWidth: 0.5)
+                .stroke(Color(.separator), lineWidth: 0.5)
         )
-        .shadow(color: Color.yellow.opacity(0.1), radius: 3, x: 0, y: 2)
+        .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
         .contextMenu {
             contextMenuContent
         }
@@ -491,21 +545,17 @@ struct BookmarkTileView: View {
     }
     
     private var domainFallbackView: some View {
-        LinearGradient(
-            gradient: Gradient(colors: [Color.yellow.opacity(0.3), Color.orange.opacity(0.2)]),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        Color(.systemGray5)
         .overlay {
             VStack(spacing: 4) {
                 Image(systemName: "globe")
                     .font(.title2)
-                    .foregroundColor(.orange)
+                    .foregroundColor(.secondary)
                 if let url = bookmark.url {
                     Text(domainFromURL(url))
                         .font(.caption)
                         .fontWeight(.medium)
-                        .foregroundColor(.orange.opacity(0.8))
+                        .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
             }

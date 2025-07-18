@@ -40,10 +40,11 @@ class APIService {
                 endpoint: endpoint,
                 method: .POST,
                 body: bodyData,
-                responseType: APIBookmarkResponse.self
+                responseType: APIBookmarkCreateResponse.self
             )
             
-            return response.toBookmarkItem()
+            let bookmarkItem = response.data.toBookmarkItem()
+            return bookmarkItem
         } catch {
             throw APIError.networkError
         }
