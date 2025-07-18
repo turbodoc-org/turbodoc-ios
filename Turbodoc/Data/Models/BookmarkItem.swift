@@ -14,6 +14,10 @@ class BookmarkItem {
     var localFilePath: String?
     var textContent: String?
     var thumbnailPath: String?
+    var ogImageURL: String?
+    var fileName: String?
+    var fileSize: Int64
+    var metadata: [String: String]?
     
     enum ContentType: String, CaseIterable, Codable {
         case link = "link"
@@ -38,5 +42,9 @@ class BookmarkItem {
         self.timeAdded = Date()
         self.tags = []
         self.status = .unread
+        self.ogImageURL = nil
+        self.fileName = nil
+        self.fileSize = 0
+        self.metadata = nil
     }
 }

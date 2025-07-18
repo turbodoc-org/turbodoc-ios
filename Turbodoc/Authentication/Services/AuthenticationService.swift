@@ -35,6 +35,10 @@ class AuthenticationService: ObservableObject {
             
             authToken = response.accessToken
             
+            // Save to shared keychain for Share Extension
+            try? SharedAuthManager.shared.saveAuthToken(response.accessToken)
+            try? SharedAuthManager.shared.saveUserId(user.id)
+            
             try DataManager.shared.saveUser(user)
             
         } catch {
@@ -59,6 +63,12 @@ class AuthenticationService: ObservableObject {
             
             authToken = response.session?.accessToken
             
+            // Save to shared keychain for Share Extension
+            if let token = response.session?.accessToken {
+                try? SharedAuthManager.shared.saveAuthToken(token)
+                try? SharedAuthManager.shared.saveUserId(user.id)
+            }
+            
             try DataManager.shared.saveUser(user)
             
         } catch {
@@ -79,6 +89,9 @@ class AuthenticationService: ObservableObject {
             if let user = currentUser {
                 try DataManager.shared.deleteUser(user)
             }
+            
+            // Clear shared keychain
+            try? SharedAuthManager.shared.clearAllCredentials()
             
             currentUser = nil
             isAuthenticated = false
@@ -125,6 +138,10 @@ class AuthenticationService: ObservableObject {
             currentUser = user
             isAuthenticated = true
             authToken = session.accessToken
+            
+            // Save to shared keychain for Share Extension
+            try? SharedAuthManager.shared.saveAuthToken(session.accessToken)
+            try? SharedAuthManager.shared.saveUserId(user.id)
             
             try DataManager.shared.saveUser(user)
         } catch {

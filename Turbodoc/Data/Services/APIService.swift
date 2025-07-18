@@ -59,10 +59,10 @@ class APIService {
                 endpoint: endpoint,
                 method: .PUT,
                 body: bodyData,
-                responseType: APIBookmarkResponse.self
+                responseType: APIBookmarkUpdateResponse.self
             )
             
-            return response.toBookmarkItem()
+            return response.data.toBookmarkItem()
         } catch {
             throw APIError.networkError
         }
@@ -116,6 +116,30 @@ class APIService {
             )
             
             return response.toUser()
+        } catch {
+            throw APIError.networkError
+        }
+    }
+    
+    // MARK: - OG Image Operations
+    
+    func fetchOgImage(for url: String) async throws -> APIOgImageResponse {
+        var urlComponents = APIConfig.baseURLComponents
+        urlComponents.path = APIConfig.Endpoints.ogImage
+        urlComponents.queryItems = [URLQueryItem(name: "url", value: url)]
+        
+        guard let requestURL = urlComponents.url else {
+            throw APIError.invalidResponse
+        }
+        
+        do {
+            let response = try await networkService.performRequest(
+                endpoint: urlComponents.path + "?" + (urlComponents.query ?? ""),
+                method: .GET,
+                responseType: APIOgImageResponse.self
+            )
+            
+            return response
         } catch {
             throw APIError.networkError
         }

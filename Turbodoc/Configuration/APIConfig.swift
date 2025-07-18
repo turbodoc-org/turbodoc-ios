@@ -23,5 +23,6 @@ struct APIConfig {
         static let bookmarkById = "/v1/bookmarks/" // append bookmark ID
         static let users = "/v1/users"
         static let userById = "/v1/users/" // append user ID
+        static let ogImage = "/v1/bookmarks/og-image" // OG image endpoint
     }
 }

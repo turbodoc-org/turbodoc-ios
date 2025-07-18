@@ -5,13 +5,13 @@ import Foundation
 struct APIBookmarkRequest: Codable {
     let title: String
     let url: String?
-    let tags: [String]
+    let tags: String
     let status: String
     
     init(from bookmarkItem: BookmarkItem) {
         self.title = bookmarkItem.title
         self.url = bookmarkItem.url
-        self.tags = bookmarkItem.tags
+        self.tags = bookmarkItem.tags.joined(separator: "|")
         self.status = bookmarkItem.status.rawValue
     }
 }
@@ -26,9 +26,10 @@ struct APIBookmarkResponse: Codable {
     let status: String
     let created_at: String
     let updated_at: String
+    let ogImage: String?
     
     enum CodingKeys: String, CodingKey {
-        case id, user_id, title, url, time_added, tags, status, created_at, updated_at
+        case id, user_id, title, url, time_added, tags, status, created_at, updated_at, ogImage
     }
     
     var tagsList: [String] {
@@ -53,6 +54,7 @@ struct APIBookmarkResponse: Codable {
         
         bookmark.tags = tagsList
         bookmark.status = BookmarkItem.ItemStatus(rawValue: status) ?? .unread
+        bookmark.ogImageURL = ogImage
         
         return bookmark
     }
@@ -63,6 +65,10 @@ struct APIBookmarkListResponse: Codable {
     let total: Int?
     let page: Int?
     let per_page: Int?
+}
+
+struct APIBookmarkUpdateResponse: Codable {
+    let data: APIBookmarkResponse
 }
 
 struct APIUserResponse: Codable {
@@ -94,6 +100,11 @@ struct APIUserResponse: Codable {
 struct APIUserUpdateRequest: Codable {
     let name: String?
     let email: String?
+}
+
+struct APIOgImageResponse: Codable {
+    let ogImage: String?
+    let title: String?
 }
 
 // Helper struct to handle tags field that can be either a string or array
