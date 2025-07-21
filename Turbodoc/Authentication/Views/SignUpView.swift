@@ -18,6 +18,12 @@ struct SignUpView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 120, height: 120)
+                        .background(Color(.systemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color(.systemGray5), lineWidth: 1)
+                        )
                     
                     Text("Create Account")
                         .font(.largeTitle)
@@ -35,29 +41,31 @@ struct SignUpView: View {
                     TextField("Email", text: $email)
                         .keyboardType(.emailAddress)
                         .autocapitalization(.none)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .primaryTextFieldStyle()
+                        .foregroundColor(Constants.Colors.cardForeground)
+                        .tint(Constants.Colors.primary)
                     
                     SecureField("Password", text: $password)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .primaryTextFieldStyle()
+                        .foregroundColor(Constants.Colors.cardForeground)
+                        .tint(Constants.Colors.primary)
                     
                     SecureField("Confirm Password", text: $confirmPassword)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .primaryTextFieldStyle()
+                        .foregroundColor(Constants.Colors.cardForeground)
+                        .tint(Constants.Colors.primary)
                     
                     Button(action: signUp) {
                         HStack {
                             if authService.isLoading {
                                 ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .progressViewStyle(CircularProgressViewStyle(tint: Constants.Colors.primaryForeground))
                                     .scaleEffect(0.8)
                             }
                             Text("Sign Up")
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
                     }
+                    .primaryButtonStyle(isLoading: authService.isLoading)
                     .disabled(authService.isLoading || !isFormValid)
                 }
                 .padding(.horizontal)

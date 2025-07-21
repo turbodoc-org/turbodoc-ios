@@ -9,85 +9,109 @@ struct SignInView: View {
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 20) {
-                Spacer()
-                
-                // Logo/Title
-                VStack(spacing: 10) {
-                    Image("Logo")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 120, height: 120)
+            ScrollView {
+                VStack(spacing: Constants.Spacing.xl) {
+                    Spacer(minLength: Constants.Spacing.xxl)
                     
-                    Text("Turbodoc")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
+                    // Logo/Title
+                    VStack(spacing: Constants.Spacing.md) {
+                        Image("Logo")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 120, height: 120)
+                            .background(Color(.systemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color(.systemGray5), lineWidth: 1)
+                            )
+                        
+                        Text(Constants.App.name)
+                            .font(.system(size: Constants.Typography.FontSizes.xxl + 8, weight: .bold))
+                            .foregroundColor(Constants.Colors.cardForeground)
+                        
+                        Text("Save and organize your content")
+                            .font(.system(size: Constants.Typography.FontSizes.base))
+                            .foregroundColor(Constants.Colors.mutedForeground)
+                    }
+                    .padding(.bottom, Constants.Spacing.lg)
                     
-                    Text("Save and organize your content")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.bottom, 40)
-                
-                // Sign In Form
-                VStack(spacing: 16) {
-                    TextField("Email", text: $email)
-                        .keyboardType(.emailAddress)
-                        .autocapitalization(.none)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                    
-                    SecureField("Password", text: $password)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                    
-                    Button(action: signIn) {
-                        HStack {
-                            if authService.isLoading {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .scaleEffect(0.8)
-                            }
-                            Text("Sign In")
+                    // Sign In Card
+                    CardView {
+                        CardHeader {
+                            CardTitle(text: "Login")
+                            CardDescription(text: "Enter your email below to login to your account")
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
+                        
+                        CardContent {
+                            VStack(spacing: Constants.Spacing.lg) {
+                                FormField(label: "Email") {
+                                    TextField("mail@example.com", text: $email)
+                                        .keyboardType(.emailAddress)
+                                        .autocapitalization(.none)
+                                        .primaryTextFieldStyle()
+                                        .foregroundColor(Constants.Colors.cardForeground)
+                                        .tint(Constants.Colors.primary)
+                                }
+                                
+                                FormField(label: "Password") {
+                                    SecureField("Password", text: $password)
+                                        .primaryTextFieldStyle()
+                                        .foregroundColor(Constants.Colors.cardForeground)
+                                        .tint(Constants.Colors.primary)
+                                }
+                                
+                                Button("Forgot your password?") {
+                                    showingForgotPassword = true
+                                }
+                                .font(.system(size: Constants.Typography.FontSizes.sm))
+                                .foregroundColor(Color(.systemBlue))
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                
+                                // Error Message
+                                if let errorMessage = authService.errorMessage {
+                                    Text(errorMessage)
+                                        .font(.system(size: Constants.Typography.FontSizes.sm))
+                                        .foregroundColor(Constants.Colors.destructive)
+                                        .multilineTextAlignment(.leading)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                
+                                Button(action: signIn) {
+                                    HStack(spacing: Constants.Spacing.sm) {
+                                        if authService.isLoading {
+                                            ProgressView()
+                                                .progressViewStyle(CircularProgressViewStyle(tint: Constants.Colors.primaryForeground))
+                                                .scaleEffect(0.8)
+                                        }
+                                        Text(authService.isLoading ? "Logging in..." : "Login")
+                                    }
+                                }
+                                .primaryButtonStyle(isLoading: authService.isLoading)
+                                .disabled(authService.isLoading || email.isEmpty || password.isEmpty)
+                            }
+                            
+                            HStack {
+                                Text("Don't have an account?")
+                                    .font(.system(size: Constants.Typography.FontSizes.sm))
+                                    .foregroundColor(Color(.systemGray2))
+                                
+                                Button("Sign up") {
+                                    showingSignUp = true
+                                }
+                                .font(.system(size: Constants.Typography.FontSizes.sm))
+                                .foregroundColor(Color(.systemBlue))
+                            }
+                            .padding(.top, Constants.Spacing.md)
+                            .frame(maxWidth: .infinity)
+                        }
                     }
-                    .disabled(authService.isLoading || email.isEmpty || password.isEmpty)
-                }
-                .padding(.horizontal)
-                
-                // Error Message
-                if let errorMessage = authService.errorMessage {
-                    Text(errorMessage)
-                        .foregroundColor(.red)
-                        .font(.caption)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                }
-                
-                // Action Buttons
-                HStack {
-                    Button("Forgot Password?") {
-                        showingForgotPassword = true
-                    }
-                    .foregroundColor(.blue)
-                    .font(.footnote)
+                    .padding(.horizontal, Constants.Spacing.md)
                     
-                    Spacer()
-                    
-                    Button("Sign Up") {
-                        showingSignUp = true
-                    }
-                    .foregroundColor(.blue)
-                    .font(.footnote)
+                    Spacer(minLength: Constants.Spacing.xl)
                 }
-                .padding(.horizontal)
-                .padding(.top, 10)
-                
-                Spacer()
             }
+            .background(Constants.Colors.background)
             .navigationBarHidden(true)
         }
         .sheet(isPresented: $showingForgotPassword) {

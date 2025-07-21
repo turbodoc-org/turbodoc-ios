@@ -14,11 +14,10 @@ struct AddBookmarkView: View {
                     Text("Enter URL")
                         .font(.headline)
                     
-                    TextField("", text: $urlText)
+                    TextField("https://example.com", text: $urlText)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         .keyboardType(.URL)
                         .autocorrectionDisabled(true)
-                        .placeholder("https://example.com")
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
                         .onSubmit {
