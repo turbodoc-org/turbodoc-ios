@@ -3,8 +3,11 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject var authService: AuthenticationService
     @State private var bookmarks: [BookmarkItem] = []
+    @State private var allBookmarks: [BookmarkItem] = []
+    @State private var searchText = ""
     @State private var isLoading = false
     @State private var isRefreshing = false
+    @State private var isSearching = false
     @State private var errorMessage: String?
     @State private var showingDeleteConfirmation = false
     @State private var bookmarkToDelete: BookmarkItem?
@@ -21,7 +24,11 @@ struct HomeView: View {
                     bookmarksList
                 }
             }
-            .navigationTitle("Home")
+            .navigationTitle("Bookmarks")
+            .searchable(text: $searchText, prompt: "Search bookmarks...")
+            .onChange(of: searchText) { searchQuery in
+                performSearch(query: searchQuery)
+            }
             .onAppear {
                 loadBookmarks()
             }
@@ -147,6 +154,7 @@ struct HomeView: View {
                 let fetchedBookmarks = try await APIService.shared.fetchBookmarks(userId: user.id)
                 
                 await MainActor.run {
+                    self.allBookmarks = fetchedBookmarks
                     self.bookmarks = fetchedBookmarks
                     self.isLoading = false
                 }
@@ -177,6 +185,7 @@ struct HomeView: View {
             let fetchedBookmarks = try await APIService.shared.fetchBookmarks(userId: user.id)
             
             await MainActor.run {
+                self.allBookmarks = fetchedBookmarks
                 self.bookmarks = fetchedBookmarks
                 self.isRefreshing = false
             }
@@ -199,6 +208,7 @@ struct HomeView: View {
                 try await APIService.shared.deleteBookmark(id: bookmark.id)
                 await MainActor.run {
                     self.bookmarks.removeAll { $0.id == bookmark.id }
+                    self.allBookmarks.removeAll { $0.id == bookmark.id }
                     self.bookmarkToDelete = nil
                 }
             } catch {
@@ -221,6 +231,9 @@ struct HomeView: View {
                     if let index = self.bookmarks.firstIndex(where: { $0.id == bookmark.id }) {
                         self.bookmarks[index] = result
                     }
+                    if let index = self.allBookmarks.firstIndex(where: { $0.id == bookmark.id }) {
+                        self.allBookmarks[index] = result
+                    }
                 }
             } catch let networkError as NetworkError {                
                 // Check if it's a decoding error but the request was successful
@@ -229,6 +242,9 @@ struct HomeView: View {
                     await MainActor.run {
                         if let index = self.bookmarks.firstIndex(where: { $0.id == bookmark.id }) {
                             self.bookmarks[index].tags = newTags
+                        }
+                        if let index = self.allBookmarks.firstIndex(where: { $0.id == bookmark.id }) {
+                            self.allBookmarks[index].tags = newTags
                         }
                         self.errorMessage = "Tags updated successfully (response format issue)"
                     }
@@ -274,6 +290,7 @@ struct HomeView: View {
                 
                 // Update UI
                 await MainActor.run {
+                    self.allBookmarks.insert(savedBookmark, at: 0)
                     self.bookmarks.insert(savedBookmark, at: 0)
                     self.showingAddBookmark = false
                 }
@@ -281,6 +298,71 @@ struct HomeView: View {
             } catch {
                 await MainActor.run {
                     self.errorMessage = "Failed to add bookmark: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func performSearch(query: String) {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // If search is empty, show all bookmarks
+        if trimmedQuery.isEmpty {
+            bookmarks = allBookmarks
+            return
+        }
+        
+        // For local search, filter the existing bookmarks
+        if trimmedQuery.count < 3 {
+            // Local search for short queries
+            bookmarks = allBookmarks.filter { bookmark in
+                bookmark.title.localizedCaseInsensitiveContains(trimmedQuery) ||
+                bookmark.url?.localizedCaseInsensitiveContains(trimmedQuery) == true ||
+                bookmark.tags.contains { tag in
+                    tag.localizedCaseInsensitiveContains(trimmedQuery)
+                }
+            }
+            return
+        }
+        
+        // For longer queries, use API search
+        guard let user = authService.currentUser else {
+            return
+        }
+        
+        // Debounce API calls
+        isSearching = true
+        
+        Task {
+            // Add a small delay to debounce rapid typing
+            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
+            
+            // Check if search text is still the same (user hasn't typed more)
+            guard searchText.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedQuery else {
+                return
+            }
+            
+            do {
+                let searchResults = try await APIService.shared.searchBookmarks(query: trimmedQuery, userId: user.id)
+                
+                await MainActor.run {
+                    // Only update if this is still the current search
+                    if self.searchText.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedQuery {
+                        self.bookmarks = searchResults
+                    }
+                    self.isSearching = false
+                }
+            } catch {
+                await MainActor.run {
+                    // Fall back to local search on API error
+                    self.bookmarks = self.allBookmarks.filter { bookmark in
+                        bookmark.title.localizedCaseInsensitiveContains(trimmedQuery) ||
+                        bookmark.url?.localizedCaseInsensitiveContains(trimmedQuery) == true ||
+                        bookmark.tags.contains { tag in
+                            tag.localizedCaseInsensitiveContains(trimmedQuery)
+                        }
+                    }
+                    self.isSearching = false
                 }
             }
         }

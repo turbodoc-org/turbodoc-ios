@@ -8,13 +8,7 @@ struct MainTabView: View {
             HomeView()
                 .tabItem {
                     Image(systemName: "house.fill")
-                    Text("Home")
-                }
-            
-            SearchView()
-                .tabItem {
-                    Image(systemName: "magnifyingglass")
-                    Text("Search")
+                    Text("Bookmarks")
                 }
             
             ProfileView()

@@ -75,6 +75,11 @@ struct APIBookmarkUpdateResponse: Codable {
     let data: APIBookmarkResponse
 }
 
+struct APIBookmarkSearchResponse: Codable {
+    let data: [APIBookmarkResponse]
+    let query: String
+}
+
 struct APIUserResponse: Codable {
     let id: String
     let email: String

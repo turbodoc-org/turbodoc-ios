@@ -86,13 +86,13 @@ class APIService {
     
     func searchBookmarks(query: String, userId: String) async throws -> [BookmarkItem] {
         let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let endpoint = APIConfig.Endpoints.bookmarks + "?search=\(encodedQuery)"
+        let endpoint = APIConfig.Endpoints.searchBookmarks + "?q=\(encodedQuery)"
         
         do {
             let response = try await networkService.performRequest(
                 endpoint: endpoint,
                 method: .GET,
-                responseType: APIBookmarkListResponse.self
+                responseType: APIBookmarkSearchResponse.self
             )
             
             return response.data.map { $0.toBookmarkItem() }
