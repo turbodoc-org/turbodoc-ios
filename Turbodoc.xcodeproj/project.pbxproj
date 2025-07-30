@@ -53,11 +53,21 @@
 			);
 			target = F38CA8872E39F4570032E012 /* ShareExtension */;
 		};
+		F3F0CD182E3A591F008737FE /* Exceptions for "Turbodoc" folder in "Turbodoc" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = F373AE4A2E279E2B003A9876 /* Turbodoc */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		F373AE4D2E279E2B003A9876 /* Turbodoc */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F3F0CD182E3A591F008737FE /* Exceptions for "Turbodoc" folder in "Turbodoc" target */,
+			);
 			path = Turbodoc;
 			sourceTree = "<group>";
 		};
@@ -398,6 +408,8 @@
 				DEVELOPMENT_TEAM = 7NA9PJ7WYB;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Turbodoc/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -429,6 +441,8 @@
 				DEVELOPMENT_TEAM = 7NA9PJ7WYB;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Turbodoc/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
