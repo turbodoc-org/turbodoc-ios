@@ -24,6 +24,15 @@ class ShareViewController: SLComposeServiceViewController {
         super.viewDidLoad()
         loadExistingBookmarks()
     }
+    
+    override func presentationAnimationDidFinish() {
+        super.presentationAnimationDidFinish()
+        
+        // Change the "Post" button text to "Save"
+        if let navigationController = self.navigationController {
+            navigationController.navigationBar.topItem?.rightBarButtonItem?.title = "Save"
+        }
+    }
 
     override func didSelectPost() {       
         guard let extensionContext = self.extensionContext else {
@@ -290,7 +299,6 @@ class ShareViewController: SLComposeServiceViewController {
             "url": url,
             "contentType": contentType,
             "status": "unread",
-            "tags": [],
             "userId": userId,
             "timeAdded": ISO8601DateFormatter().string(from: Date())
         ]
