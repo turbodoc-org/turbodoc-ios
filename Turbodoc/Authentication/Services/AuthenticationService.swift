@@ -11,6 +11,7 @@ class AuthenticationService: ObservableObject {
     
     private let supabaseClient: SupabaseClient
     private var authToken: String? = nil
+    private let appGroupIdentifier = "group.ai.turbodoc.ios.Turbodoc"
     
     init() {
         self.supabaseClient = SupabaseClient(
@@ -34,6 +35,7 @@ class AuthenticationService: ObservableObject {
             isAuthenticated = true
             
             authToken = response.accessToken
+            saveAuthTokenToSharedStorage(response.accessToken)
             
         } catch {
             errorMessage = "Invalid email or password"
@@ -56,6 +58,9 @@ class AuthenticationService: ObservableObject {
             isAuthenticated = true
             
             authToken = response.session?.accessToken
+            if let token = response.session?.accessToken {
+                saveAuthTokenToSharedStorage(token)
+            }
             
         } catch {
             errorMessage = "Failed to create account"
@@ -75,6 +80,7 @@ class AuthenticationService: ObservableObject {
             currentUser = nil
             isAuthenticated = false
             authToken = nil
+            clearAuthTokenFromSharedStorage()
             
         } catch {
             errorMessage = "Failed to sign out"
@@ -117,15 +123,55 @@ class AuthenticationService: ObservableObject {
             currentUser = user
             isAuthenticated = true
             authToken = session.accessToken
+            saveAuthTokenToSharedStorage(session.accessToken)
         } catch {
             isAuthenticated = false
             currentUser = nil
             authToken = nil
+            clearAuthTokenFromSharedStorage()
         }
     }
     
     func getCurrentAuthToken() -> String? {
         return authToken
+    }
+    
+    // MARK: - Shared Storage for Share Extension
+    
+    private func saveAuthTokenToSharedStorage(_ token: String) {
+        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
+            return
+        }
+        
+        let authURL = containerURL.appendingPathComponent("auth.json")
+        
+        let authData = [
+            "accessToken": token,
+            "timestamp": Date().timeIntervalSince1970
+        ] as [String: Any]
+        
+        do {
+            let data = try JSONSerialization.data(withJSONObject: authData)
+            try data.write(to: authURL)
+        } catch {
+            // Silent error handling
+        }
+    }
+    
+    private func clearAuthTokenFromSharedStorage() {
+        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
+            return
+        }
+        
+        let authURL = containerURL.appendingPathComponent("auth.json")
+        
+        do {
+            if FileManager.default.fileExists(atPath: authURL.path) {
+                try FileManager.default.removeItem(at: authURL)
+            }
+        } catch {
+            // Silent error handling
+        }
     }
 }
 

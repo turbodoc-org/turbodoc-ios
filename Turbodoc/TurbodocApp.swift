@@ -31,8 +31,24 @@ struct TurbodocApp: App {
             RootView()
                 .environmentObject(authService)
                 .onAppear {
-                    // Configure API service with auth service
+                    // Configure services with auth service
                     APIService.shared.configure(authService: authService)
+                    PendingBookmarksService.shared.configure(authService: authService)
+                    
+                    // If user is already authenticated, process pending bookmarks
+                    if authService.isAuthenticated {
+                        Task {
+                            await PendingBookmarksService.shared.processPendingBookmarks()
+                        }
+                    }
+                }
+                .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
+                    if isAuthenticated {
+                        // Process pending bookmarks when user becomes authenticated
+                        Task {
+                            await PendingBookmarksService.shared.processPendingBookmarks()
+                        }
+                    }
                 }
         }
         .modelContainer(sharedModelContainer)
