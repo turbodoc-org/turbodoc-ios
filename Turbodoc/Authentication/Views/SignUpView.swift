@@ -20,10 +20,6 @@ struct SignUpView: View {
                         .frame(width: 120, height: 120)
                         .background(Color(.systemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color(.systemGray5), lineWidth: 1)
-                        )
                     
                     Text("Create Account")
                         .font(.largeTitle)

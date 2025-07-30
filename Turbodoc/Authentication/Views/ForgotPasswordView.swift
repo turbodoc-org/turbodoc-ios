@@ -19,10 +19,6 @@ struct ForgotPasswordView: View {
                         .frame(width: 120, height: 120)
                         .background(Color(.systemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color(.systemGray5), lineWidth: 1)
-                        )
                     
                     Text("Reset Password")
                         .font(.largeTitle)
@@ -32,6 +28,7 @@ struct ForgotPasswordView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
                 }
                 .padding(.bottom, 40)
                 

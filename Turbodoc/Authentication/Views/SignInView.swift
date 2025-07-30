@@ -21,10 +21,6 @@ struct SignInView: View {
                             .frame(width: 120, height: 120)
                             .background(Color(.systemBackground))
                             .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color(.systemGray5), lineWidth: 1)
-                            )
                         
                         Text(Constants.App.name)
                             .font(.system(size: Constants.Typography.FontSizes.xxl + 8, weight: .bold))
