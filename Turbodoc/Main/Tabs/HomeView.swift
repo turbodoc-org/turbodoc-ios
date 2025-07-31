@@ -12,6 +12,8 @@ struct HomeView: View {
     @State private var showingDeleteConfirmation = false
     @State private var bookmarkToDelete: BookmarkItem?
     @State private var showingAddBookmark = false
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var lastRefreshTime = Date()
     
     var body: some View {
         NavigationView {
@@ -30,7 +32,12 @@ struct HomeView: View {
                 performSearch(query: searchQuery)
             }
             .onAppear {
-                loadBookmarks()
+                refreshBookmarksIfNeeded()
+            }
+            .onChange(of: scenePhase) { phase in
+                if phase == .active && authService.isAuthenticated {
+                    refreshBookmarksIfNeeded()
+                }
             }
             .onChange(of: authService.isAuthenticated) { isAuthenticated in
                 if isAuthenticated {
@@ -132,6 +139,29 @@ struct HomeView: View {
         .listStyle(PlainListStyle())
         .refreshable {
             await refreshBookmarks()
+        }
+    }
+    
+    private func refreshBookmarksIfNeeded() {
+        guard let user = authService.currentUser else {
+            return
+        }
+        
+        // Check if we should refresh (first load or if it's been more than 30 seconds since last refresh)
+        let timeSinceLastRefresh = Date().timeIntervalSince(lastRefreshTime)
+        let shouldRefresh = bookmarks.isEmpty || timeSinceLastRefresh > 30
+        
+        if shouldRefresh {
+            lastRefreshTime = Date()
+            
+            // Use loadBookmarks for initial load, refreshBookmarks for subsequent refreshes
+            if bookmarks.isEmpty {
+                loadBookmarks()
+            } else {
+                Task {
+                    await refreshBookmarks()
+                }
+            }
         }
     }
     
@@ -690,22 +720,22 @@ struct BookmarkTileView: View {
         }
     }
     
+    @ViewBuilder
     private var contextMenuContent: some View {
-        Group {
-            Button(action: openURL) {
-                Label("Open Link", systemImage: "link")
-            }
-            
-            Button(action: { showingTagEditor = true }) {
-                Label("Edit Tags", systemImage: "tag")
-            }
-            
-            Divider()
-            
-            Button(action: { onDelete(bookmark) }) {
-                Label("Delete", systemImage: "trash")
-            }
-            .foregroundColor(.red)
+        Button(action: openURL) {
+            Label("Open Link", systemImage: "link")
+        }
+        
+        Button(action: { showingTagEditor = true }) {
+            Label("Edit Tags", systemImage: "tag")
+        }
+        
+        Divider()
+        
+        Button(role: .destructive) {
+            onDelete(bookmark)
+        } label: {
+            Label("Delete", systemImage: "trash")
         }
     }
     
