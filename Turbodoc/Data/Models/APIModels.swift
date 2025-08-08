@@ -116,6 +116,83 @@ struct APIOgImageResponse: Codable {
     let title: String?
 }
 
+// MARK: - Note API Models
+
+struct APINoteRequest: Codable {
+    let title: String?
+    let content: String
+    let tags: String
+    
+    init(from noteItem: NoteItem) {
+        self.title = noteItem.title
+        self.content = noteItem.content
+        self.tags = noteItem.tags.joined(separator: "|")
+    }
+}
+
+struct APINoteResponse: Codable {
+    let id: String
+    let user_id: String
+    let title: String?
+    let content: String
+    private let tags: TagsContainer?
+    let created_at: String
+    let updated_at: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id, user_id, title, content, tags, created_at, updated_at
+    }
+    
+    var tagsList: [String] {
+        return tags?.array ?? []
+    }
+    
+    func toNoteItem() -> NoteItem {
+        let note = NoteItem(
+            title: title,
+            content: content,
+            tags: tagsList,
+            userId: user_id
+        )
+        
+        // Parse the ID from string to UUID
+        if let uuid = UUID(uuidString: id) {
+            note.id = uuid
+        }
+        
+        // Parse timestamps
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        
+        if let createdDate = formatter.date(from: created_at) {
+            note.createdAt = createdDate
+        }
+        
+        if let updatedDate = formatter.date(from: updated_at) {
+            note.updatedAt = updatedDate
+        }
+        
+        return note
+    }
+}
+
+struct APINoteListResponse: Codable {
+    let data: [APINoteResponse]
+    let total: Int?
+    let page: Int?
+    let per_page: Int?
+}
+
+struct APINoteCreateResponse: Codable {
+    let data: APINoteResponse
+}
+
+struct APINoteUpdateResponse: Codable {
+    let data: APINoteResponse
+}
+
+
 // Helper struct to handle tags field that can be either a string or array
 struct TagsContainer: Codable {
     let array: [String]

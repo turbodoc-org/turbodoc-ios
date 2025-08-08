@@ -146,6 +146,92 @@ class APIService {
         }
     }
     
+    // MARK: - Note Operations
+    
+    func fetchNotes(userId: String) async throws -> [NoteItem] {
+        let endpoint = APIConfig.Endpoints.notes
+        
+        do {
+            let response = try await networkService.performRequest(
+                endpoint: endpoint,
+                method: .GET,
+                responseType: APINoteListResponse.self
+            )
+            
+            return response.data.map { $0.toNoteItem() }
+        } catch {
+            throw APIError.networkError
+        }
+    }
+    
+    func saveNote(_ note: NoteItem) async throws -> NoteItem {
+        let endpoint = APIConfig.Endpoints.notes
+        let requestBody = APINoteRequest(from: note)
+        
+        do {
+            let bodyData = try networkService.encodeBody(requestBody)
+            let response = try await networkService.performRequest(
+                endpoint: endpoint,
+                method: .POST,
+                body: bodyData,
+                responseType: APINoteCreateResponse.self
+            )
+            
+            return response.data.toNoteItem()
+        } catch {
+            throw APIError.networkError
+        }
+    }
+    
+    func updateNote(_ note: NoteItem) async throws -> NoteItem {
+        let endpoint = APIConfig.Endpoints.noteById + note.id.uuidString
+        let requestBody = APINoteRequest(from: note)
+        
+        do {
+            let bodyData = try networkService.encodeBody(requestBody)
+            let response = try await networkService.performRequest(
+                endpoint: endpoint,
+                method: .PUT,
+                body: bodyData,
+                responseType: APINoteUpdateResponse.self
+            )
+            
+            return response.data.toNoteItem()
+        } catch {
+            throw APIError.networkError
+        }
+    }
+    
+    func deleteNote(id: UUID) async throws {
+        let endpoint = APIConfig.Endpoints.noteById + id.uuidString
+        
+        do {
+            try await networkService.performRequest(
+                endpoint: endpoint,
+                method: .DELETE
+            )
+        } catch {
+            throw APIError.networkError
+        }
+    }
+    
+    func searchNotes(query: String, userId: String) async throws -> [NoteItem] {
+        let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let endpoint = APIConfig.Endpoints.notes + "?search=\(encodedQuery)"
+        
+        do {
+            let response = try await networkService.performRequest(
+                endpoint: endpoint,
+                method: .GET,
+                responseType: APINoteListResponse.self
+            )
+            
+            return response.data.map { $0.toNoteItem() }
+        } catch {
+            throw APIError.networkError
+        }
+    }
+    
     // MARK: - Statistics Operations
     
     func getUserStats(userId: String) async throws -> UserStats {
