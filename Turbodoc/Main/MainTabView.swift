@@ -7,8 +7,14 @@ struct MainTabView: View {
         TabView {
             HomeView()
                 .tabItem {
-                    Image(systemName: "house.fill")
+                    Image(systemName: "bookmark.fill")
                     Text("Bookmarks")
+                }
+            
+            NotesView()
+                .tabItem {
+                    Image(systemName: "text.justify")
+                    Text("Notes")
                 }
             
             ProfileView()

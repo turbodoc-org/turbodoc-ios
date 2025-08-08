@@ -28,24 +28,24 @@ struct HomeView: View {
             }
             .navigationTitle("Bookmarks")
             .searchable(text: $searchText, prompt: "Search bookmarks...")
-            .onChange(of: searchText) { searchQuery in
-                performSearch(query: searchQuery)
+            .onChange(of: searchText) {
+                performSearch(query: searchText)
             }
             .onAppear {
                 refreshBookmarksIfNeeded()
             }
-            .onChange(of: scenePhase) { phase in
-                if phase == .active && authService.isAuthenticated {
+            .onChange(of: scenePhase) {
+                if scenePhase == .active && authService.isAuthenticated {
                     refreshBookmarksIfNeeded()
                 }
             }
-            .onChange(of: authService.isAuthenticated) { isAuthenticated in
-                if isAuthenticated {
+            .onChange(of: authService.isAuthenticated) {
+                if authService.isAuthenticated {
                     loadBookmarks()
                 }
             }
-            .onChange(of: authService.currentUser) { user in
-                if user != nil {
+            .onChange(of: authService.currentUser) {
+                if authService.currentUser != nil {
                     loadBookmarks()
                 }
             }
@@ -404,8 +404,14 @@ struct TagEditorView: View {
     let onSave: ([String]) -> Void
     
     @State private var tagText = ""
-    @State private var tags: [String] = []
+    @State private var tags: [String]
     @Environment(\.dismiss) private var dismiss
+    
+    init(bookmark: BookmarkItem, onSave: @escaping ([String]) -> Void) {
+        self.bookmark = bookmark
+        self.onSave = onSave
+        self._tags = State(initialValue: bookmark.tags)
+    }
     
     var body: some View {
         NavigationView {
@@ -548,14 +554,6 @@ struct BookmarkTileView: View {
                             }
                         }
                         
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            Text(formattedTimeAdded(bookmark.timeAdded))
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
                     }
                     
                     Spacer()
@@ -783,22 +781,6 @@ struct BookmarkTileView: View {
             return Color.yellow.opacity(0.8)
         case .file:
             return .purple
-        }
-    }
-    
-    private func formattedTimeAdded(_ date: Date) -> String {
-        let calendar = Calendar.current
-        let now = Date()
-        let components = calendar.dateComponents([.month], from: date, to: now)
-        
-        guard let months = components.month else { return "Recently" }
-        
-        if months == 0 {
-            return "This month"
-        } else if months == 1 {
-            return "1 month ago"
-        } else {
-            return "\(months) months ago"
         }
     }
 }
