@@ -146,6 +146,24 @@ class APIService {
         }
     }
     
+    // MARK: - Tags Operations
+    
+    func fetchTags() async throws -> [APITagItem] {
+        let endpoint = APIConfig.Endpoints.tags
+        
+        do {
+            let response = try await networkService.performRequest(
+                endpoint: endpoint,
+                method: .GET,
+                responseType: APITagsResponse.self
+            )
+            
+            return response.data
+        } catch {
+            throw APIError.networkError
+        }
+    }
+    
     // MARK: - Note Operations
     
     func fetchNotes(userId: String) async throws -> [NoteItem] {

@@ -27,5 +27,6 @@ struct APIConfig {
         static let users = "/v1/users"
         static let userById = "/v1/users/" // append user ID
         static let ogImage = "/v1/bookmarks/og-image" // OG image endpoint
+        static let tags = "/v1/tags" // Get user's top tags
     }
 }

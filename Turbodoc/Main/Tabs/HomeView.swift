@@ -62,8 +62,8 @@ struct HomeView: View {
                 }
             }
             .sheet(isPresented: $showingAddBookmark) {
-                AddBookmarkView(onSave: { url in
-                    addBookmark(url: url)
+                AddBookmarkView(onSave: { url, tags in
+                    addBookmark(url: url, tags: tags)
                 })
             }
             .overlay(alignment: .bottomTrailing) {
@@ -130,9 +130,29 @@ struct HomeView: View {
         List(bookmarks, id: \.id) { bookmark in
             BookmarkTileView(bookmark: bookmark, onDelete: { bookmarkToDelete in
                 confirmDeleteBookmark(bookmarkToDelete)
-            }, onUpdateTags: { bookmarkToUpdate, newTags in
-                updateBookmarkTags(bookmarkToUpdate, newTags: newTags)
+            }, onUpdate: { updatedBookmark in
+                updateBookmark(updatedBookmark)
             })
+            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                if bookmark.status != .read {
+                    Button {
+                        markAsRead(bookmark)
+                    } label: {
+                        Label("Read", systemImage: "checkmark.circle.fill")
+                    }
+                    .tint(.green)
+                }
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                if bookmark.status != .archived {
+                    Button {
+                        archiveBookmark(bookmark)
+                    } label: {
+                        Label("Archive", systemImage: "archivebox.fill")
+                    }
+                    .tint(.gray)
+                }
+            }
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             .listRowSeparator(.hidden)
         }
@@ -250,12 +270,10 @@ struct HomeView: View {
         }
     }
     
-    private func updateBookmarkTags(_ bookmark: BookmarkItem, newTags: [String]) {
+    private func updateBookmark(_ bookmark: BookmarkItem) {
         Task {
             do {
-                var updatedBookmark = bookmark
-                updatedBookmark.tags = newTags
-                let result = try await APIService.shared.updateBookmark(updatedBookmark)
+                let result = try await APIService.shared.updateBookmark(bookmark)
                 
                 await MainActor.run {
                     if let index = self.bookmarks.firstIndex(where: { $0.id == bookmark.id }) {
@@ -271,12 +289,12 @@ struct HomeView: View {
                     // Optimistically update the UI since the API call likely succeeded
                     await MainActor.run {
                         if let index = self.bookmarks.firstIndex(where: { $0.id == bookmark.id }) {
-                            self.bookmarks[index].tags = newTags
+                            self.bookmarks[index] = bookmark
                         }
                         if let index = self.allBookmarks.firstIndex(where: { $0.id == bookmark.id }) {
-                            self.allBookmarks[index].tags = newTags
+                            self.allBookmarks[index] = bookmark
                         }
-                        self.errorMessage = "Tags updated successfully (response format issue)"
+                        self.errorMessage = "Bookmark updated successfully"
                     }
                 } else {
                     await MainActor.run {
@@ -291,31 +309,71 @@ struct HomeView: View {
         }
     }
     
+    private func markAsRead(_ bookmark: BookmarkItem) {
+        var updatedBookmark = bookmark
+        updatedBookmark.status = .read
+        updateBookmark(updatedBookmark)
+    }
     
-    private func addBookmark(url: String) {
+    private func archiveBookmark(_ bookmark: BookmarkItem) {
+        var updatedBookmark = bookmark
+        updatedBookmark.status = .archived
+        updateBookmark(updatedBookmark)
+    }
+    
+    private func addBookmark(url: String, tags: [String] = []) {
         guard let user = authService.currentUser else {
             errorMessage = "Please sign in to add bookmarks"
             return
         }
         
         Task {
-            do {                
-                // Fetch page metadata to get the actual title
-                let metadata = try await APIService.shared.fetchOgImage(for: url)
-                let pageTitle = metadata.title?.isEmpty == false ? metadata.title! : "Untitled"
-                
-                // Create bookmark object with actual title
-                let bookmark = BookmarkItem(
-                    title: pageTitle,
-                    url: url,
-                    contentType: .link,
-                    userId: user.id
-                )
-                
-                // Set OG image if available
-                bookmark.ogImageURL = metadata.ogImage
-                
-                // Save to API
+            // Try to fetch metadata with retries
+            let metadata = await fetchMetadataWithRetry(url: url, retries: 2)
+            
+            // Extract domain info from URL
+            let urlComponents = URL(string: url)
+            let domain = urlComponents?.host ?? ""
+            let faviconURL = urlComponents.map { "https://www.google.com/s2/favicons?domain=\($0.host ?? "")&sz=64" }
+            
+            // Extract title, fallback to URL host if no title
+            let pageTitle: String
+            if let extractedTitle = metadata?.title, !extractedTitle.isEmpty {
+                pageTitle = extractedTitle
+            } else if !domain.isEmpty {
+                pageTitle = domain
+            } else {
+                pageTitle = "Untitled"
+            }
+            
+            // Create bookmark object with fetched metadata
+            let bookmark = BookmarkItem(
+                title: pageTitle,
+                url: url,
+                contentType: .link,
+                userId: user.id
+            )
+            
+            // Set tags if provided
+            bookmark.tags = tags
+            
+            // Set OG image if available
+            bookmark.ogImageURL = metadata?.ogImage
+            
+            // Store domain and favicon in metadata
+            var metadataDict: [String: String] = [:]
+            if !domain.isEmpty {
+                metadataDict["domain"] = domain
+            }
+            if let favicon = faviconURL {
+                metadataDict["faviconURL"] = favicon
+            }
+            if !metadataDict.isEmpty {
+                bookmark.metadata = metadataDict
+            }
+            
+            // Save to API
+            do {
                 let savedBookmark = try await APIService.shared.saveBookmark(bookmark)
                 
                 // Update UI
@@ -324,13 +382,31 @@ struct HomeView: View {
                     self.bookmarks.insert(savedBookmark, at: 0)
                     self.showingAddBookmark = false
                 }
-                
             } catch {
                 await MainActor.run {
                     self.errorMessage = "Failed to add bookmark: \(error.localizedDescription)"
                 }
             }
         }
+    }
+    
+    private func fetchMetadataWithRetry(url: String, retries: Int) async -> APIOgImageResponse? {
+        var attempts = 0
+        while attempts <= retries {
+            do {
+                let metadata = try await APIService.shared.fetchOgImage(for: url)
+                return metadata
+            } catch {
+                attempts += 1
+                if attempts > retries {
+                    print("Failed to fetch metadata after \(retries) retries: \(error.localizedDescription)")
+                    return nil
+                }
+                // Wait before retry (exponential backoff)
+                try? await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempts)) * 1_000_000_000))
+            }
+        }
+        return nil
     }
     
     private func performSearch(query: String) {
@@ -510,9 +586,9 @@ struct TagEditorView: View {
 struct BookmarkTileView: View {
     let bookmark: BookmarkItem
     let onDelete: (BookmarkItem) -> Void
-    let onUpdateTags: (BookmarkItem, [String]) -> Void
+    let onUpdate: (BookmarkItem) -> Void
     
-    @State private var showingTagEditor = false
+    @State private var showingEditor = false
     @State private var ogImage: String? = nil
     @State private var imageLoading = false
     @State private var imageError = false
@@ -620,9 +696,9 @@ struct BookmarkTileView: View {
         .contextMenu {
             contextMenuContent
         }
-        .sheet(isPresented: $showingTagEditor) {
-            TagEditorView(bookmark: bookmark, onSave: { newTags in
-                onUpdateTags(bookmark, newTags)
+        .sheet(isPresented: $showingEditor) {
+            BookmarkEditView(bookmark: bookmark, onSave: { updatedBookmark in
+                onUpdate(updatedBookmark)
             })
         }
         .onAppear {
@@ -724,8 +800,8 @@ struct BookmarkTileView: View {
             Label("Open Link", systemImage: "link")
         }
         
-        Button(action: { showingTagEditor = true }) {
-            Label("Edit Tags", systemImage: "tag")
+        Button(action: { showingEditor = true }) {
+            Label("Edit Bookmark", systemImage: "pencil")
         }
         
         Divider()

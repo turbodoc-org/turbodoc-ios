@@ -116,6 +116,17 @@ struct APIOgImageResponse: Codable {
     let title: String?
 }
 
+// MARK: - Tags API Models
+
+struct APITagItem: Codable {
+    let tag: String
+    let count: Int
+}
+
+struct APITagsResponse: Codable {
+    let data: [APITagItem]
+}
+
 // MARK: - Note API Models
 
 struct APINoteRequest: Codable {

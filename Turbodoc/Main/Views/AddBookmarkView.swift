@@ -1,10 +1,11 @@
 import SwiftUI
 
 struct AddBookmarkView: View {
-    let onSave: (String) -> Void
+    let onSave: (String, [String]) -> Void
     
     @State private var urlText = ""
     @State private var isValidURL = false
+    @State private var selectedTags: [String] = []
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -22,7 +23,7 @@ struct AddBookmarkView: View {
                         .disableAutocorrection(true)
                         .onSubmit {
                             if isValidURL {
-                                onSave(urlText)
+                                saveBookmark()
                             }
                         }
                         .onChange(of: urlText) { newValue in
@@ -35,6 +36,9 @@ struct AddBookmarkView: View {
                             .foregroundColor(.red)
                     }
                 }
+                
+                // Tag Suggestions
+                TagSuggestionsView(selectedTags: $selectedTags)
                 
                 Spacer()
             }
@@ -50,12 +54,17 @@ struct AddBookmarkView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
-                        onSave(urlText)
+                        saveBookmark()
                     }
                     .disabled(!isValidURL)
                 }
             }
         }
+    }
+    
+    private func saveBookmark() {
+        onSave(urlText, selectedTags)
+        dismiss()
     }
     
     private func validateURL(_ urlString: String) {
@@ -111,7 +120,7 @@ struct QuickAddButton: View {
 }
 
 #Preview {
-    AddBookmarkView { url in
-        print("Would save: \(url)")
+    AddBookmarkView { url, tags in
+        print("Would save: \(url) with tags: \(tags)")
     }
 }
