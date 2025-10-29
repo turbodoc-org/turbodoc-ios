@@ -644,8 +644,8 @@ struct BookmarkTileView: View {
                                 .font(.caption2)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Color.yellow.opacity(0.2))
-                                .foregroundColor(Color.orange.opacity(0.8))
+                                .background(Color(.systemGray5))
+                                .foregroundColor(Color(.label))
                                 .cornerRadius(8)
                         }
                         
@@ -802,6 +802,36 @@ struct BookmarkTileView: View {
         
         Button(action: { showingEditor = true }) {
             Label("Edit Bookmark", systemImage: "pencil")
+        }
+        
+        if bookmark.status != .read {
+            Button(action: { 
+                var updatedBookmark = bookmark
+                updatedBookmark.status = .read
+                onUpdate(updatedBookmark)
+            }) {
+                Label("Mark as Read", systemImage: "checkmark.circle")
+            }
+        }
+
+        if bookmark.status != .unread {
+            Button(action: { 
+                var updatedBookmark = bookmark
+                updatedBookmark.status = .unread
+                onUpdate(updatedBookmark)
+            }) {
+                Label("Mark as Unread", systemImage: "circle")
+            }
+        }
+        
+        if bookmark.status != .archived {
+            Button(action: { 
+                var updatedBookmark = bookmark
+                updatedBookmark.status = .archived
+                onUpdate(updatedBookmark)
+            }) {
+                Label("Archive", systemImage: "archivebox")
+            }
         }
         
         Divider()
