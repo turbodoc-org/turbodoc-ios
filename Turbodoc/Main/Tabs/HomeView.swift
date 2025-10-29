@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject var authService: AuthenticationService
+    @EnvironmentObject var quickActionService: QuickActionService
     @State private var bookmarks: [BookmarkItem] = []
     @State private var allBookmarks: [BookmarkItem] = []
     @State private var searchText = ""
@@ -14,6 +15,7 @@ struct HomeView: View {
     @State private var showingAddBookmark = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var lastRefreshTime = Date()
+    @AppStorage("viewMode") private var viewMode: ViewMode = .grid
     
     var body: some View {
         NavigationView {
@@ -27,6 +29,17 @@ struct HomeView: View {
                 }
             }
             .navigationTitle("Bookmarks")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        HapticManager.shared.selection()
+                        viewMode = viewMode == .grid ? .list : .grid
+                    }) {
+                        Image(systemName: viewMode == .grid ? "list.bullet" : "square.grid.2x2")
+                            .imageScale(.large)
+                    }
+                }
+            }
             .searchable(text: $searchText, prompt: "Search bookmarks...")
             .onChange(of: searchText) {
                 performSearch(query: searchText)
@@ -65,6 +78,15 @@ struct HomeView: View {
                 AddBookmarkView(onSave: { url, tags in
                     addBookmark(url: url, tags: tags)
                 })
+            }
+            .onChange(of: quickActionService.currentAction) { _, action in
+                if action == .newBookmark {
+                    showingAddBookmark = true
+                    HapticManager.shared.light()
+                } else if action == .search {
+                    // Focus search field - this will be handled by searchable modifier
+                    HapticManager.shared.light()
+                }
             }
             .overlay(alignment: .bottomTrailing) {
                 Button(action: { showingAddBookmark = true }) {
@@ -127,6 +149,16 @@ struct HomeView: View {
     }
     
     private var bookmarksList: some View {
+        Group {
+            if viewMode == .grid {
+                gridView
+            } else {
+                listView
+            }
+        }
+    }
+    
+    private var gridView: some View {
         List(bookmarks, id: \.id) { bookmark in
             BookmarkTileView(bookmark: bookmark, onDelete: { bookmarkToDelete in
                 confirmDeleteBookmark(bookmarkToDelete)
@@ -155,6 +187,41 @@ struct HomeView: View {
             }
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             .listRowSeparator(.hidden)
+        }
+        .listStyle(PlainListStyle())
+        .refreshable {
+            await refreshBookmarks()
+        }
+    }
+    
+    private var listView: some View {
+        List(bookmarks, id: \.id) { bookmark in
+            BookmarkCompactView(bookmark: bookmark, onDelete: { bookmarkToDelete in
+                confirmDeleteBookmark(bookmarkToDelete)
+            }, onUpdate: { updatedBookmark in
+                updateBookmark(updatedBookmark)
+            })
+            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                if bookmark.status != .read {
+                    Button {
+                        markAsRead(bookmark)
+                    } label: {
+                        Label("Read", systemImage: "checkmark.circle.fill")
+                    }
+                    .tint(.green)
+                }
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                if bookmark.status != .archived {
+                    Button {
+                        archiveBookmark(bookmark)
+                    } label: {
+                        Label("Archive", systemImage: "archivebox.fill")
+                    }
+                    .tint(.gray)
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
         }
         .listStyle(PlainListStyle())
         .refreshable {
@@ -252,7 +319,9 @@ struct HomeView: View {
         showingDeleteConfirmation = true
     }
     
-    private func deleteBookmark(_ bookmark: BookmarkItem) {        
+    private func deleteBookmark(_ bookmark: BookmarkItem) {
+        HapticManager.shared.warning()
+        
         Task {
             do {
                 try await APIService.shared.deleteBookmark(id: bookmark.id)
@@ -260,11 +329,13 @@ struct HomeView: View {
                     self.bookmarks.removeAll { $0.id == bookmark.id }
                     self.allBookmarks.removeAll { $0.id == bookmark.id }
                     self.bookmarkToDelete = nil
+                    HapticManager.shared.success()
                 }
             } catch {
                 await MainActor.run {
                     self.errorMessage = "Failed to delete bookmark: \(error.localizedDescription)"
                     self.bookmarkToDelete = nil
+                    HapticManager.shared.error()
                 }
             }
         }
@@ -282,6 +353,7 @@ struct HomeView: View {
                     if let index = self.allBookmarks.firstIndex(where: { $0.id == bookmark.id }) {
                         self.allBookmarks[index] = result
                     }
+                    HapticManager.shared.success()
                 }
             } catch let networkError as NetworkError {                
                 // Check if it's a decoding error but the request was successful
@@ -295,27 +367,32 @@ struct HomeView: View {
                             self.allBookmarks[index] = bookmark
                         }
                         self.errorMessage = "Bookmark updated successfully"
+                        HapticManager.shared.success()
                     }
                 } else {
                     await MainActor.run {
                         self.errorMessage = "Failed to update bookmark: \(networkError.localizedDescription)"
+                        HapticManager.shared.error()
                     }
                 }
             } catch {
                 await MainActor.run {
                     self.errorMessage = "Failed to update bookmark: \(error.localizedDescription)"
+                    HapticManager.shared.error()
                 }
             }
         }
     }
     
     private func markAsRead(_ bookmark: BookmarkItem) {
+        HapticManager.shared.light()
         var updatedBookmark = bookmark
         updatedBookmark.status = .read
         updateBookmark(updatedBookmark)
     }
     
     private func archiveBookmark(_ bookmark: BookmarkItem) {
+        HapticManager.shared.light()
         var updatedBookmark = bookmark
         updatedBookmark.status = .archived
         updateBookmark(updatedBookmark)
@@ -804,8 +881,19 @@ struct BookmarkTileView: View {
             Label("Edit Bookmark", systemImage: "pencil")
         }
         
+        Button(action: copyLink) {
+            Label("Copy Link", systemImage: "doc.on.doc")
+        }
+        
+        Button(action: shareBookmark) {
+            Label("Share", systemImage: "square.and.arrow.up")
+        }
+        
+        Divider()
+        
         if bookmark.status != .read {
             Button(action: { 
+                HapticManager.shared.selection()
                 var updatedBookmark = bookmark
                 updatedBookmark.status = .read
                 onUpdate(updatedBookmark)
@@ -816,6 +904,7 @@ struct BookmarkTileView: View {
 
         if bookmark.status != .unread {
             Button(action: { 
+                HapticManager.shared.selection()
                 var updatedBookmark = bookmark
                 updatedBookmark.status = .unread
                 onUpdate(updatedBookmark)
@@ -826,6 +915,7 @@ struct BookmarkTileView: View {
         
         if bookmark.status != .archived {
             Button(action: { 
+                HapticManager.shared.selection()
                 var updatedBookmark = bookmark
                 updatedBookmark.status = .archived
                 onUpdate(updatedBookmark)
@@ -837,6 +927,7 @@ struct BookmarkTileView: View {
         Divider()
         
         Button(role: .destructive) {
+            HapticManager.shared.warning()
             onDelete(bookmark)
         } label: {
             Label("Delete", systemImage: "trash")
@@ -850,6 +941,271 @@ struct BookmarkTileView: View {
         }
         
         UIApplication.shared.open(url)
+    }
+    
+    private func copyLink() {
+        guard let urlString = bookmark.url else { return }
+        UIPasteboard.general.string = urlString
+        HapticManager.shared.success()
+    }
+    
+    private func shareBookmark() {
+        guard let urlString = bookmark.url,
+              let url = URL(string: urlString) else {
+            return
+        }
+        
+        HapticManager.shared.light()
+        
+        let activityVC = UIActivityViewController(
+            activityItems: [url, bookmark.title],
+            applicationActivities: nil
+        )
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootViewController = windowScene.windows.first?.rootViewController {
+            // Find the topmost presented view controller
+            var topController = rootViewController
+            while let presented = topController.presentedViewController {
+                topController = presented
+            }
+            
+            // For iPad, set popover presentation
+            if let popover = activityVC.popoverPresentationController {
+                popover.sourceView = topController.view
+                popover.sourceRect = CGRect(x: topController.view.bounds.midX, y: topController.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            
+            topController.present(activityVC, animated: true)
+        }
+    }
+    
+    private func domainFromURL(_ urlString: String) -> String {
+        guard let url = URL(string: urlString),
+              let host = url.host else {
+            return urlString
+        }
+        return host.replacingOccurrences(of: "www.", with: "")
+    }
+    
+    private func iconForContentType(_ contentType: BookmarkItem.ContentType) -> String {
+        switch contentType {
+        case .link:
+            return "link"
+        case .image:
+            return "photo"
+        case .video:
+            return "video"
+        case .text:
+            return "doc.text"
+        case .file:
+            return "doc"
+        }
+    }
+    
+    private func colorForContentType(_ contentType: BookmarkItem.ContentType) -> Color {
+        switch contentType {
+        case .link:
+            return .blue
+        case .image:
+            return .green
+        case .video:
+            return .red
+        case .text:
+            return Color.yellow.opacity(0.8)
+        case .file:
+            return .purple
+        }
+    }
+}
+
+// MARK: - Compact List View
+
+struct BookmarkCompactView: View {
+    let bookmark: BookmarkItem
+    let onDelete: (BookmarkItem) -> Void
+    let onUpdate: (BookmarkItem) -> Void
+    
+    @State private var showingEditor = false
+    
+    var body: some View {
+        Button(action: openURL) {
+            HStack(spacing: 12) {
+                // Favicon or icon
+                Image(systemName: iconForContentType(bookmark.contentType))
+                    .font(.footnote)
+                    .foregroundColor(.white)
+                    .frame(width: 32, height: 32)
+                    .background(colorForContentType(bookmark.contentType))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                
+                // Content
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(bookmark.title)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    
+                    HStack(spacing: 8) {
+                        if let url = bookmark.url {
+                            Text(domainFromURL(url))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                        
+                        if !bookmark.tags.isEmpty {
+                            Text("•")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Text(bookmark.tags.prefix(2).joined(separator: ", "))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                // Status indicator
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 8, height: 8)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PlainButtonStyle())
+        .contextMenu {
+            contextMenuContent
+        }
+        .sheet(isPresented: $showingEditor) {
+            BookmarkEditView(bookmark: bookmark, onSave: { updatedBookmark in
+                onUpdate(updatedBookmark)
+            })
+        }
+    }
+    
+    private var statusColor: Color {
+        switch bookmark.status {
+        case .unread:
+            return .orange
+        case .read:
+            return .green
+        case .archived:
+            return .gray
+        }
+    }
+    
+    @ViewBuilder
+    private var contextMenuContent: some View {
+        Button(action: openURL) {
+            Label("Open Link", systemImage: "link")
+        }
+        
+        Button(action: { showingEditor = true }) {
+            Label("Edit Bookmark", systemImage: "pencil")
+        }
+        
+        Button(action: copyLink) {
+            Label("Copy Link", systemImage: "doc.on.doc")
+        }
+        
+        Button(action: shareBookmark) {
+            Label("Share", systemImage: "square.and.arrow.up")
+        }
+        
+        Divider()
+        
+        if bookmark.status != .read {
+            Button(action: { 
+                HapticManager.shared.selection()
+                var updatedBookmark = bookmark
+                updatedBookmark.status = .read
+                onUpdate(updatedBookmark)
+            }) {
+                Label("Mark as Read", systemImage: "checkmark.circle")
+            }
+        }
+
+        if bookmark.status != .unread {
+            Button(action: { 
+                HapticManager.shared.selection()
+                var updatedBookmark = bookmark
+                updatedBookmark.status = .unread
+                onUpdate(updatedBookmark)
+            }) {
+                Label("Mark as Unread", systemImage: "circle")
+            }
+        }
+        
+        if bookmark.status != .archived {
+            Button(action: { 
+                HapticManager.shared.selection()
+                var updatedBookmark = bookmark
+                updatedBookmark.status = .archived
+                onUpdate(updatedBookmark)
+            }) {
+                Label("Archive", systemImage: "archivebox")
+            }
+        }
+        
+        Divider()
+        
+        Button(role: .destructive) {
+            HapticManager.shared.warning()
+            onDelete(bookmark)
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+    }
+    
+    private func openURL() {
+        guard let urlString = bookmark.url,
+              let url = URL(string: urlString) else {
+            return
+        }
+        
+        UIApplication.shared.open(url)
+    }
+    
+    private func copyLink() {
+        guard let urlString = bookmark.url else { return }
+        UIPasteboard.general.string = urlString
+        HapticManager.shared.success()
+    }
+    
+    private func shareBookmark() {
+        guard let urlString = bookmark.url,
+              let url = URL(string: urlString) else {
+            return
+        }
+        
+        HapticManager.shared.light()
+        
+        let activityVC = UIActivityViewController(
+            activityItems: [url, bookmark.title],
+            applicationActivities: nil
+        )
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootViewController = windowScene.windows.first?.rootViewController {
+            var topController = rootViewController
+            while let presented = topController.presentedViewController {
+                topController = presented
+            }
+            
+            if let popover = activityVC.popoverPresentationController {
+                popover.sourceView = topController.view
+                popover.sourceRect = CGRect(x: topController.view.bounds.midX, y: topController.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            
+            topController.present(activityVC, animated: true)
+        }
     }
     
     private func domainFromURL(_ urlString: String) -> String {

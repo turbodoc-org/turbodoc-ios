@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NotesView: View {
     @EnvironmentObject var authService: AuthenticationService
+    @EnvironmentObject var quickActionService: QuickActionService
     @State private var notes: [NoteItem] = []
     @State private var allNotes: [NoteItem] = []
     @State private var searchText = ""
@@ -72,6 +73,15 @@ struct NotesView: View {
                 AddNoteView(onSave: { note in
                     addNote(note)
                 })
+            }
+            .onChange(of: quickActionService.currentAction) { _, action in
+                if action == .newNote {
+                    showingAddNote = true
+                    HapticManager.shared.light()
+                } else if action == .search {
+                    // Focus search field - handled by searchable modifier
+                    HapticManager.shared.light()
+                }
             }
             .navigationDestination(item: $noteToEdit) { noteToEdit in
                 EditNoteView(

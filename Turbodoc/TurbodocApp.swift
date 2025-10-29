@@ -10,7 +10,10 @@ import SwiftData
 
 @main
 struct TurbodocApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var authService = AuthenticationService()
+    @StateObject private var quickActionService = QuickActionService()
+    @Environment(\.scenePhase) private var scenePhase
     
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -30,6 +33,7 @@ struct TurbodocApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(authService)
+                .environmentObject(quickActionService)
                 .onAppear {
                     // Configure services with auth service
                     APIService.shared.configure(authService: authService)
@@ -50,7 +54,31 @@ struct TurbodocApp: App {
                         }
                     }
                 }
+                .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .active {
+                        handlePendingQuickAction()
+                    }
+                }
         }
         .modelContainer(sharedModelContainer)
+    }
+    
+    private func handlePendingQuickAction() {
+        guard let shortcutItem = QuickActionHandler.shared.shortcutItemToProcess else {
+            return
+        }
+        
+        QuickActionHandler.shared.shortcutItemToProcess = nil
+        
+        switch shortcutItem.type {
+        case "com.turbodoc.newBookmark":
+            quickActionService.triggerAction(.newBookmark)
+        case "com.turbodoc.newNote":
+            quickActionService.triggerAction(.newNote)
+        case "com.turbodoc.search":
+            quickActionService.triggerAction(.search)
+        default:
+            break
+        }
     }
 }
