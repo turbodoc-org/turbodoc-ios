@@ -6,454 +6,223 @@
 //
 
 import UIKit
-import Social
-import MobileCoreServices
+import SwiftUI
 import UniformTypeIdentifiers
 import Foundation
 
-class ShareViewController: SLComposeServiceViewController {
+class ShareViewController: UIViewController {
     
     private let appGroupIdentifier = "group.ai.turbodoc.ios.Turbodoc"
-    private var savedBookmarks: Set<String> = [] // For deduplication
-    
-    override func isContentValid() -> Bool {
-        return true
-    }
+    private var hostingController: UIHostingController<EnhancedShareView>?
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        loadExistingBookmarks()
+        
+        extractSharedURL()
     }
     
-    override func presentationAnimationDidFinish() {
-        super.presentationAnimationDidFinish()
-        
-        // Change the "Post" button text to "Save"
-        if let navigationController = self.navigationController {
-            navigationController.navigationBar.topItem?.rightBarButtonItem?.title = "Save"
-        }
-    }
-
-    override func didSelectPost() {       
-        guard let extensionContext = self.extensionContext else {
-            self.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
+    private func extractSharedURL() {
+        guard let extensionItem = extensionContext?.inputItems.first as? NSExtensionItem,
+              let itemProvider = extensionItem.attachments?.first else {
+            cancelShare()
             return
         }
         
-        processSharedContent(extensionContext: extensionContext)
-    }
-    
-    private func processSharedContent(extensionContext: NSExtensionContext) {        
-        let inputItems = extensionContext.inputItems as! [NSExtensionItem]
-        
-        let group = DispatchGroup()
-        
-        for (itemIndex, inputItem) in inputItems.enumerated() {
-            guard let attachments = inputItem.attachments else {
-                continue
-            }
-            
-            for (attachmentIndex, attachment) in attachments.enumerated() {
-                group.enter()
-                
-                if attachment.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                    handleURL(attachment: attachment) { group.leave() }
-                } else if attachment.hasItemConformingToTypeIdentifier(UTType.text.identifier) {
-                    handleText(attachment: attachment) { group.leave() }
-                } else if attachment.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-                    handleImage(attachment: attachment) { group.leave() }
-                } else if attachment.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
-                    handleVideo(attachment: attachment) { group.leave() }
-                } else if attachment.hasItemConformingToTypeIdentifier(UTType.data.identifier) {
-                    handleFile(attachment: attachment) { group.leave() }
-                } else {
-                    group.leave()
-                }
-            }
-        }
-        
-        group.notify(queue: .main) { [weak self] in
-            self?.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
-        }
-    }
-    
-    private func handleURL(attachment: NSItemProvider, completion: @escaping () -> Void) {       
-        attachment.loadObject(ofClass: URL.self) { [weak self] (url, error) in
-            defer { completion() }
-            
-            if let error = error {
-                return
-            }
-            
-            guard let url = url else {
-                return
-            }
-            
-            self?.saveBookmark(url: url.absoluteString, type: "url", title: self?.contentText ?? "")
-        }
-    }
-    
-    private func handleText(attachment: NSItemProvider, completion: @escaping () -> Void) {
-
-        attachment.loadObject(ofClass: NSString.self) { [weak self] (text, error) in
-            defer { completion() }
-            
-            if let error = error {
-                return
-            }
-            
-            guard let text = text as? String else {
-                return
-            }
-            
-            self?.saveBookmark(url: text, type: "text", title: self?.contentText ?? "")
-        }
-    }
-    
-    private func handleImage(attachment: NSItemProvider, completion: @escaping () -> Void) {
-        attachment.loadFileRepresentation(forTypeIdentifier: UTType.image.identifier) { [weak self] (url, error) in
-            defer { completion() }
-            
-            if let error = error {
-                return
-            }
-            
-            guard let url = url else {
-                return
-            }
-            
-            do {
-                let imageData = try Data(contentsOf: url)
-                guard let image = UIImage(data: imageData) else {
+        if itemProvider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+            itemProvider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { [weak self] (item, error) in
+                guard let url = item as? URL else {
+                    self?.cancelShare()
                     return
                 }
                 
-                self?.saveImageBookmark(image: image, title: self?.contentText ?? "")
-            } catch {
-                // Silent error handling
+                DispatchQueue.main.async {
+                    self?.presentShareView(with: url.absoluteString)
+                }
             }
-        }
-    }
-    
-    private func handleVideo(attachment: NSItemProvider, completion: @escaping () -> Void) {
-        attachment.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { [weak self] (url, error) in
-            defer { completion() }
-            
-            if let error = error {
-                return
+        } else if itemProvider.hasItemConformingToTypeIdentifier(UTType.text.identifier) {
+            itemProvider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { [weak self] (item, error) in
+                guard let text = item as? String,
+                      let url = self?.extractURL(from: text) else {
+                    self?.cancelShare()
+                    return
+                }
+                
+                DispatchQueue.main.async {
+                    self?.presentShareView(with: url)
+                }
             }
-            
-            guard let url = url else {
-                return
-            }
-            
-            self?.saveBookmark(url: url.absoluteString, type: "video", title: self?.contentText ?? "")
+        } else {
+            cancelShare()
         }
     }
     
-    private func handleFile(attachment: NSItemProvider, completion: @escaping () -> Void) {
-        attachment.loadFileRepresentation(forTypeIdentifier: UTType.data.identifier) { [weak self] (url, error) in
-            defer { completion() }
-            
-            if let error = error {
-                return
-            }
-            
-            guard let url = url else {
-                return
-            }
-            
-            self?.saveBookmark(url: url.absoluteString, type: "file", title: self?.contentText ?? "")
-        }
-    }
-    
-    private func saveBookmark(url: String, type: String, title: String) {
-        // Check for duplicates
-        if savedBookmarks.contains(url) {
-            return
+    private func extractURL(from text: String) -> String? {
+        // Try to find URL in text
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        let matches = detector?.matches(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count))
+        
+        if let match = matches?.first, let url = match.url {
+            return url.absoluteString
         }
         
-        // Add to local deduplication set
-        savedBookmarks.insert(url)
-        
-        // Try to sync immediately to remote DB
-        Task {
-            await syncBookmarkToRemote(url: url, type: type, title: title)
-        }
-    }
-    
-    private func saveImageBookmark(image: UIImage, title: String) {
-        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
-            return
-        }
-        
-        guard let documentsPath = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
-            return
-        }
-        
-        let imageName = "image_\(UUID().uuidString).jpg"
-        let imagePath = documentsPath.appendingPathComponent(imageName)
-        
-        do {
-            try imageData.write(to: imagePath)
-            saveBookmark(url: imagePath.absoluteString, type: "image", title: title)
-        } catch {
-            // Silent error handling
-        }
-    }
-
-    override func configurationItems() -> [Any]! {
-        return []
-    }
-    
-    // MARK: - Deduplication and Remote Sync
-    
-    private func loadExistingBookmarks() {
-        // Load existing bookmarks from local storage for deduplication
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
-            return
-        }
-        
-        let bookmarksURL = containerURL.appendingPathComponent("savedBookmarks.json")
-        
-        guard FileManager.default.fileExists(atPath: bookmarksURL.path) else {
-            return
-        }
-        
-        do {
-            let data = try Data(contentsOf: bookmarksURL)
-            if let bookmarks = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                savedBookmarks = Set(bookmarks.compactMap { $0["url"] as? String })
-            }
-        } catch {
-            // Silent error handling
-        }
-    }
-    
-    private func syncBookmarkToRemote(url: String, type: String, title: String) async {
-        // Try to get auth token from shared keychain
-        guard let authToken = getSharedAuthToken() else {
-            await fallbackToLocalStorage(url: url, type: type, title: title)
-            return
-        }
-        
-        // Get userId from auth token
-        guard let userId = getUserIdFromToken(authToken) else {
-            await fallbackToLocalStorage(url: url, type: type, title: title)
-            return
-        }
-        
-        // Create bookmark data for API
-        let bookmarkData = createAPIBookmarkData(url: url, type: type, title: title, userId: userId)
-        
-        // Attempt to sync to remote
-        do {
-            try await performRemoteSync(bookmarkData: bookmarkData, authToken: authToken)
-            
-            // Save to local cache for deduplication
-            await saveToLocalCache(url: url, type: type, title: title)
-            
-        } catch {
-            await fallbackToLocalStorage(url: url, type: type, title: title)
-        }
-    }
-    
-    private func getSharedAuthToken() -> String? {
-        // Try to get auth token from shared keychain or app group storage
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
-            return nil
-        }
-        
-        let authURL = containerURL.appendingPathComponent("auth.json")
-        
-        guard FileManager.default.fileExists(atPath: authURL.path) else {
-            return nil
-        }
-        
-        do {
-            let data = try Data(contentsOf: authURL)
-            if let authData = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let token = authData["accessToken"] as? String {
-                return token
-            }
-        } catch {
-            // Silent error handling
+        // If text itself looks like a URL
+        if text.hasPrefix("http://") || text.hasPrefix("https://") {
+            return text
         }
         
         return nil
     }
     
-    private func createAPIBookmarkData(url: String, type: String, title: String, userId: String) -> [String: Any] {
-        let contentType: String
-        switch type {
-        case "url": contentType = "link"
-        case "image": contentType = "image"
-        case "video": contentType = "video"
-        case "text": contentType = "text"
-        case "file": contentType = "file"
-        default: contentType = "link"
-        }
+    private func presentShareView(with url: String) {
+        let shareView = EnhancedShareView(
+            sharedURL: url,
+            onSave: { [weak self] bookmarkData in
+                self?.saveBookmark(data: bookmarkData)
+            },
+            onCancel: { [weak self] in
+                self?.cancelShare()
+            }
+        )
         
-        return [
-            "title": title.isEmpty ? extractTitleFromURL(url) : title,
-            "url": url,
-            "contentType": contentType,
-            "status": "unread",
-            "userId": userId,
-            "timeAdded": ISO8601DateFormatter().string(from: Date())
-        ]
+        let hostingController = UIHostingController(rootView: shareView)
+        self.hostingController = hostingController
+        
+        addChild(hostingController)
+        view.addSubview(hostingController.view)
+        hostingController.view.frame = view.bounds
+        hostingController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        hostingController.didMove(toParent: self)
     }
     
-    private func performRemoteSync(bookmarkData: [String: Any], authToken: String) async throws {
-        guard let apiURL = URL(string: "https://api.turbodoc.ai/v1/bookmarks") else {
-            throw RemoteSyncError.invalidURL
+    private func saveBookmark(data: ShareBookmarkData) {
+        // Check for duplicates
+        if checkDuplicate(url: data.url) {
+            // Save anyway if user chose to
         }
         
-        var request = URLRequest(url: apiURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        // Try to sync immediately to remote DB
+        Task {
+            await syncBookmarkToRemote(data: data)
+            
+            DispatchQueue.main.async { [weak self] in
+                self?.completeShare()
+            }
+        }
+    }
+    
+    private func checkDuplicate(url: String) -> Bool {
+        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
+            return false
+        }
         
-        let jsonData = try JSONSerialization.data(withJSONObject: bookmarkData)
+        let bookmarksURL = containerURL.appendingPathComponent("savedBookmarks.json")
+        
+        guard FileManager.default.fileExists(atPath: bookmarksURL.path),
+              let data = try? Data(contentsOf: bookmarksURL),
+              let bookmarks = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return false
+        }
+        
+        return bookmarks.contains { ($0["url"] as? String) == url }
+    }
+    
+    private func syncBookmarkToRemote(data: ShareBookmarkData) async {
+        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
+            // Fall back to saving locally only
+            saveLocalBookmark(data: data)
+            return
+        }
+        
+        let authURL = containerURL.appendingPathComponent("auth.json")
+        guard let authData = try? Data(contentsOf: authURL),
+              let json = try? JSONSerialization.jsonObject(with: authData) as? [String: Any],
+              let token = json["accessToken"] as? String else {
+            // Fall back to saving locally only
+            saveLocalBookmark(data: data)
+            return
+        }
+        
+        // Get API URL from main app
+        let apiURLKey = containerURL.appendingPathComponent("apiURL.txt")
+        let apiURL = (try? String(contentsOf: apiURLKey, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? "https://api.turbodoc.ai"
+        
+        // Create bookmark payload
+        let bookmark: [String: Any] = [
+            "url": data.url,
+            "title": data.title,
+            "status": data.status,
+            "tags": data.tags.joined(separator: "|")
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: bookmark) else {
+            saveLocalBookmark(data: data)
+            return
+        }
+        
+        guard let url = URL(string: "\(apiURL)/v1/bookmarks") else {
+            saveLocalBookmark(data: data)
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
         
-        let (_, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw RemoteSyncError.invalidResponse
-        }
-        
-        guard httpResponse.statusCode == 200 || httpResponse.statusCode == 201 else {
-            throw RemoteSyncError.serverError(httpResponse.statusCode)
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 201 || httpResponse.statusCode == 200 {
+                // Successfully saved to remote
+                saveLocalBookmark(data: data)
+            } else {
+                // Failed to save to remote, save locally for later sync
+                saveLocalBookmark(data: data)
+            }
+        } catch {
+            // Network error, save locally for later sync
+            saveLocalBookmark(data: data)
         }
     }
     
-    private func saveToLocalCache(url: String, type: String, title: String) async {
+    private func saveLocalBookmark(data: ShareBookmarkData) {
         guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
             return
         }
         
         let bookmarksURL = containerURL.appendingPathComponent("savedBookmarks.json")
         
-        do {
-            var savedBookmarksArray: [[String: Any]] = []
-            
-            // Read existing bookmarks if file exists
-            if FileManager.default.fileExists(atPath: bookmarksURL.path) {
-                let data = try Data(contentsOf: bookmarksURL)
-                if let existing = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                    savedBookmarksArray = existing
-                }
-            }
-            
-            // Add new bookmark
-            let bookmark = [
-                "url": url,
-                "type": type,
-                "title": title,
-                "timestamp": Date().timeIntervalSince1970
-            ] as [String : Any]
-            
-            savedBookmarksArray.append(bookmark)
-            
-            // Save back to file
-            let data = try JSONSerialization.data(withJSONObject: savedBookmarksArray)
-            try data.write(to: bookmarksURL)
-            
-        } catch {
-            // Silent error handling
+        var bookmarks: [[String: Any]] = []
+        if FileManager.default.fileExists(atPath: bookmarksURL.path),
+           let existingData = try? Data(contentsOf: bookmarksURL),
+           let existing = try? JSONSerialization.jsonObject(with: existingData) as? [[String: Any]] {
+            bookmarks = existing
+        }
+        
+        let bookmark: [String: Any] = [
+            "url": data.url,
+            "title": data.title,
+            "status": data.status,
+            "tags": data.tags,
+            "og_image": data.ogImageURL ?? "",
+            "created_at": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        bookmarks.append(bookmark)
+        
+        if let jsonData = try? JSONSerialization.data(withJSONObject: bookmarks),
+           let _ = try? jsonData.write(to: bookmarksURL) {
+            // Successfully saved locally
         }
     }
     
-    private func fallbackToLocalStorage(url: String, type: String, title: String) async {
-        let bookmark = [
-            "url": url,
-            "type": type,
-            "title": title,
-            "timestamp": Date().timeIntervalSince1970
-        ] as [String : Any]
-        
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
-            return
-        }
-        
-        let bookmarksURL = containerURL.appendingPathComponent("pendingBookmarks.json")
-        
-        do {
-            var savedBookmarks: [[String: Any]] = []
-            
-            // Read existing bookmarks if file exists
-            if FileManager.default.fileExists(atPath: bookmarksURL.path) {
-                let data = try Data(contentsOf: bookmarksURL)
-                if let existing = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                    savedBookmarks = existing
-                }
-            }
-            
-            // Add new bookmark
-            savedBookmarks.append(bookmark)
-            
-            // Save back to file
-            let data = try JSONSerialization.data(withJSONObject: savedBookmarks)
-            try data.write(to: bookmarksURL)
-            
-        } catch {
-            // Silent error handling
-        }
+    private func completeShare() {
+        extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
     }
     
-    private func getUserIdFromToken(_ token: String) -> String? {
-        // For Supabase JWT tokens, the userId is in the 'sub' claim
-        // This is a simplified extraction - in production you might want to use a JWT library
-        let components = token.components(separatedBy: ".")
-        guard components.count >= 2 else {
-            return nil
-        }
-        
-        let payload = components[1]
-        // Add padding if needed for base64 decoding
-        let paddedPayload = payload + String(repeating: "=", count: (4 - payload.count % 4) % 4)
-        
-        guard let data = Data(base64Encoded: paddedPayload),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let userId = json["sub"] as? String else {
-            return nil
-        }
-        
-        return userId
-    }
-    
-    private func extractTitleFromURL(_ urlString: String) -> String {
-        guard let url = URL(string: urlString) else {
-            return "Shared Content"
-        }
-        
-        if let host = url.host {
-            return host.replacingOccurrences(of: "www.", with: "")
-        }
-        
-        return "Shared Content"
-    }
-}
-
-// MARK: - Error Types
-
-enum RemoteSyncError: Error {
-    case invalidURL
-    case invalidResponse
-    case serverError(Int)
-    case networkError
-    
-    var localizedDescription: String {
-        switch self {
-        case .invalidURL:
-            return "Invalid API URL"
-        case .invalidResponse:
-            return "Invalid response from server"
-        case .serverError(let code):
-            return "Server error: \(code)"
-        case .networkError:
-            return "Network error"
-        }
+    private func cancelShare() {
+        let error = NSError(domain: "ai.turbodoc.ios.ShareExtension", code: 0, userInfo: [NSLocalizedDescriptionKey: "User cancelled"])
+        extensionContext?.cancelRequest(withError: error)
     }
 }
