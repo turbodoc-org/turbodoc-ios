@@ -13,6 +13,7 @@ struct EnhancedShareView: View {
     @State private var isLoadingMetadata = true
     @State private var isDuplicate = false
     @State private var showTagSuggestions = false
+    @State private var hasUserEditedTitle = false
     
     private let appGroupIdentifier = "group.ai.turbodoc.ios.Turbodoc"
     
@@ -64,6 +65,9 @@ struct EnhancedShareView: View {
                 Section(header: Text("Title")) {
                     TextField("Enter bookmark title", text: $title)
                         .disabled(isLoadingMetadata)
+                        .onChange(of: title) { _ in
+                            hasUserEditedTitle = true
+                        }
                 }
                 
                 // Status Section
@@ -170,7 +174,8 @@ struct EnhancedShareView: View {
             do {
                 let metadata = try await fetchOGMetadata(url: sharedURL)
                 await MainActor.run {
-                    if let fetchedTitle = metadata.title, !fetchedTitle.isEmpty {
+                    // Only update title if user hasn't manually edited it
+                    if !hasUserEditedTitle, let fetchedTitle = metadata.title, !fetchedTitle.isEmpty {
                         self.title = fetchedTitle
                     }
                     self.ogImageURL = metadata.ogImage
