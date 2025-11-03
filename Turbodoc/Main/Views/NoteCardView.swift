@@ -9,7 +9,7 @@ struct NoteCardView: View {
     
     var body: some View {
         cardContent
-            .frame(minHeight: 140)
+            .frame(width: 160, height: 160) // Fixed square size
             .background(cardBackground)
             .scaleEffect(isPressed ? 0.95 : 1.0)
             .shadow(
@@ -32,23 +32,14 @@ struct NoteCardView: View {
     
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header with title and optional indicators
+            // Header with title
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(note.displayTitle)
-                        .font(.headline)
-                        .fontWeight(.medium)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .foregroundColor(.primary)
-                    
-                    Spacer()
-                    
-                    // Note type indicator
-                    Circle()
-                        .fill(note.content.isEmpty ? Color.gray.opacity(0.3) : Color.blue)
-                        .frame(width: 8, height: 8)
-                }
+                Text(note.displayTitle)
+                    .font(.headline)
+                    .fontWeight(.medium)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .foregroundColor(.primary)
                 
                 if !note.content.isEmpty {
                     Text(note.previewContent)
@@ -61,6 +52,9 @@ struct NoteCardView: View {
             }
             .padding(.top, 16)
             .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+            
+            Spacer()
         }
     }
     
