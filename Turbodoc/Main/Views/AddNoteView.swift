@@ -35,32 +35,7 @@ struct AddNoteView: View {
                 Divider()
                 
                 // Content editor with improved styling
-                VStack(alignment: .leading, spacing: 0) {
-                    if !content.isEmpty {
-                        HStack {
-                            Text("CONTENT")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.secondary)
-                                .padding(.leading, 20)
-                                .padding(.top, 16)
-                            
-                            Spacer()
-                            
-                            if isAutoSaving {
-                                HStack(spacing: 4) {
-                                    ProgressView()
-                                        .scaleEffect(0.7)
-                                    Text("Saving...")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                .padding(.trailing, 20)
-                                .padding(.top, 16)
-                            }
-                        }
-                    }
-                    
+                VStack(alignment: .leading, spacing: 0) {                    
                     TextEditor(text: $content)
                         .font(.body)
                         .lineSpacing(2)

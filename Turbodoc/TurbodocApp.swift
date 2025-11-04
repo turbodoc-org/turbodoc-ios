@@ -19,6 +19,7 @@ struct TurbodocApp: App {
         let schema = Schema([
             User.self,
             BookmarkItem.self,
+            NoteItem.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

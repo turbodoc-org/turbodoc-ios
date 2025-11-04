@@ -10,13 +10,15 @@ class NoteItem {
     var userId: String = ""
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
+    var version: Int = 1
     
-    init(title: String? = nil, content: String = "", tags: [String] = [], userId: String = "") {
+    init(title: String? = nil, content: String = "", tags: [String] = [], userId: String = "", version: Int = 1) {
         self.id = UUID()
         self.title = title
         self.content = content
         self.tags = tags
         self.userId = userId
+        self.version = version
         self.createdAt = Date()
         self.updatedAt = Date()
     }

@@ -24,7 +24,7 @@ class PendingBookmarksService {
             return
         }
         
-        for (index, bookmarkData) in pendingBookmarks.enumerated() {
+        for (_, bookmarkData) in pendingBookmarks.enumerated() {
             do {
                 let bookmark = try await createBookmarkFromShareData(bookmarkData)
                 let savedBookmark = try await APIService.shared.saveBookmark(bookmark)

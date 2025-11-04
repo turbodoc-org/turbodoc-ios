@@ -47,31 +47,6 @@ struct EditNoteView: View {
             
             // Content editor with improved styling
             VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    if !note.content.isEmpty {
-                        Text("CONTENT")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
-                            .padding(.leading, 20)
-                            .padding(.top, 16)
-                    }
-                    
-                    Spacer()
-                    
-                    if isAutoSaving {
-                        HStack(spacing: 4) {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                            Text("Saving...")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.trailing, 20)
-                        .padding(.top, 16)
-                    }
-                }
-                
                 TextEditor(text: $note.content)
                     .font(.body)
                     .lineSpacing(2)
