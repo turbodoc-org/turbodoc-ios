@@ -19,8 +19,8 @@ struct NotesView: View {
     
     // Grid layout - 2 columns with improved spacing
     private let columns = [
-        GridItem(.flexible(), spacing: 16),
-        GridItem(.flexible(), spacing: 16)
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8)
     ]
     
     var body: some View {
@@ -70,9 +70,12 @@ struct NotesView: View {
                 }
             }
             .sheet(isPresented: $showingAddNote) {
-                AddNoteView(onSave: { note in
-                    addNote(note)
-                })
+                AddNoteView(
+                    onSave: { note in
+                        saveNoteUpdate(note)
+                        showingAddNote = false
+                    }
+                )
             }
             .onChange(of: quickActionService.currentAction) { _, action in
                 if action == .newNote {
@@ -165,7 +168,7 @@ struct NotesView: View {
     
     private var notesGrid: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
+            LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(notes, id: \.id) { note in
                     NoteCardView(
                         note: note,
@@ -178,7 +181,7 @@ struct NotesView: View {
                     )
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 8)
             .padding(.top, 12)
             .padding(.bottom, 100) // Space for floating action button
         }

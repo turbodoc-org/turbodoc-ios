@@ -9,7 +9,8 @@ struct NoteCardView: View {
     
     var body: some View {
         cardContent
-            .frame(width: 160, height: 160) // Fixed square size
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .aspectRatio(1, contentMode: .fit) // Keep square aspect ratio
             .background(cardBackground)
             .scaleEffect(isPressed ? 0.95 : 1.0)
             .shadow(
