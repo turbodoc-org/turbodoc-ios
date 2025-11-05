@@ -9,15 +9,17 @@ struct EditNoteView: View {
     @State private var showingDeleteConfirmation: Bool = false
     
     let onSave: (NoteItem) -> Void
+    let onFinish: () -> Void
     let onDelete: (NoteItem) -> Void
     
     @Environment(\.dismiss) private var dismiss
     
-    init(note: NoteItem, onSave: @escaping (NoteItem) -> Void, onDelete: @escaping (NoteItem) -> Void) {
+    init(note: NoteItem, onSave: @escaping (NoteItem) -> Void, onFinish: @escaping () -> Void, onDelete: @escaping (NoteItem) -> Void) {
         self._note = State(initialValue: note)
         self._originalContent = State(initialValue: note.content)
         self._originalTitle = State(initialValue: note.title)
         self.onSave = onSave
+        self.onFinish = onFinish
         self.onDelete = onDelete
     }
     
@@ -35,13 +37,8 @@ struct EditNoteView: View {
                 .font(.title2)
                 .fontWeight(.semibold)
                 .padding(.horizontal, 20)
-                .padding(.vertical, (note.title?.isEmpty ?? true) ? 16 : 8)
+                .padding(.vertical, 16)
             }
-            .background(
-                Rectangle()
-                    .fill(Color(.systemGray6))
-                    .opacity((note.title?.isEmpty ?? true) ? 0 : 1)
-            )
             
             Divider()
             
@@ -51,7 +48,7 @@ struct EditNoteView: View {
                     .font(.body)
                     .lineSpacing(2)
                     .padding(.horizontal, 16)
-                    .padding(.vertical, note.content.isEmpty ? 20 : 8)
+                    .padding(.vertical, 20)
                     .background(Color(.systemBackground))
                     .onChange(of: note.content) {
                         scheduleAutoSave()
@@ -94,7 +91,7 @@ struct EditNoteView: View {
             Text("Are you sure you want to delete \"\(note.displayTitle)\"? This action cannot be undone.")
         }
         .onDisappear {
-            saveIfNeeded()
+            finishEditing()
             saveTimer?.invalidate()
         }
     }
@@ -121,5 +118,10 @@ struct EditNoteView: View {
                 isAutoSaving = false
             }
         }
+    }
+    
+    private func finishEditing() {
+        saveIfNeeded()
+        onFinish()
     }
 }

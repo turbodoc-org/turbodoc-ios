@@ -90,7 +90,10 @@ struct NotesView: View {
                 EditNoteView(
                     note: noteToEdit,
                     onSave: { updatedNote in
-                        updateNote(updatedNote)
+                        saveNoteUpdate(updatedNote)
+                    },
+                    onFinish: {
+                        self.noteToEdit = nil
                     },
                     onDelete: { noteToDelete in
                         deleteNote(noteToDelete)
@@ -280,7 +283,7 @@ struct NotesView: View {
         showingDeleteConfirmation = true
     }
     
-    private func deleteNote(_ note: NoteItem) {        
+    private func deleteNote(_ note: NoteItem) {
         Task {
             do {
                 try await APIService.shared.deleteNote(id: note.id)
@@ -298,43 +301,47 @@ struct NotesView: View {
         }
     }
     
-    private func addNote(_ note: NoteItem) {
-        showingAddNote = false
-        
-        Task {
-            do {
-                let savedNote = try await APIService.shared.saveNote(note)
-                
-                await MainActor.run {
-                    self.allNotes.insert(savedNote, at: 0)
-                    self.notes.insert(savedNote, at: 0)
-                }
-            } catch {
-                await MainActor.run {
-                    self.errorMessage = "Failed to add note: \(error.localizedDescription)"
-                }
+    private func saveNoteUpdate(_ note: NoteItem) {
+        let isExistingNote = allNotes.contains(where: { $0.id == note.id })
+        // Update UI immediately (optimistic update)
+        if !isExistingNote {
+            self.allNotes.insert(note, at: 0)
+            self.notes.insert(note, at: 0)
+        } else {
+            if let index = self.notes.firstIndex(where: { $0.id == note.id }) {
+                self.notes[index] = note
+            }
+            if let index = self.allNotes.firstIndex(where: { $0.id == note.id }) {
+                self.allNotes[index] = note
             }
         }
-    }
-    
-    private func updateNote(_ note: NoteItem) {
-        noteToEdit = nil
         
+        // Save to server in background
         Task {
             do {
-                let updatedNote = try await APIService.shared.updateNote(note)
+                let savedNote: NoteItem
+                
+                // Use UI state to determine if this is a new or existing note
+                if !isExistingNote {
+                    // New note - create on server
+                    savedNote = try await APIService.shared.saveNote(note)
+                } else {
+                    // Existing note - update on server
+                    savedNote = try await APIService.shared.updateNote(note)
+                }
                 
                 await MainActor.run {
+                    // Update with server response
                     if let index = self.notes.firstIndex(where: { $0.id == note.id }) {
-                        self.notes[index] = updatedNote
+                        self.notes[index] = savedNote
                     }
                     if let index = self.allNotes.firstIndex(where: { $0.id == note.id }) {
-                        self.allNotes[index] = updatedNote
+                        self.allNotes[index] = savedNote
                     }
                 }
             } catch {
                 await MainActor.run {
-                    self.errorMessage = "Failed to update note: \(error.localizedDescription)"
+                    self.errorMessage = "Failed to save note: \(error.localizedDescription)"
                 }
             }
         }
