@@ -7,10 +7,11 @@ struct EnhancedShareView: View {
     
     @State private var title: String = ""
     @State private var selectedTags: [String] = []
-    @State private var suggestedTags: [String] = []
+    @State private var suggestedTags: [APITagItem] = []
     @State private var status: String = "unread"
     @State private var ogImageURL: String?
     @State private var isLoadingMetadata = true
+    @State private var isLoadingTags = false
     @State private var isDuplicate = false
     @State private var showTagSuggestions = false
     @State private var hasUserEditedTitle = false
@@ -97,7 +98,7 @@ struct EnhancedShareView: View {
                     if !selectedTags.isEmpty {
                         FlowLayout(spacing: 8) {
                             ForEach(selectedTags, id: \.self) { tag in
-                                TagChip(tag: tag, isSelected: true) {
+                                TagChip(tag: tag, count: nil, isSelected: true) {
                                     selectedTags.removeAll { $0 == tag }
                                 }
                             }
@@ -110,8 +111,13 @@ struct EnhancedShareView: View {
                             Image(systemName: "tag")
                             Text("Add Tags")
                             Spacer()
-                            Image(systemName: showTagSuggestions ? "chevron.up" : "chevron.down")
-                                .font(.caption)
+                            if isLoadingTags {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: showTagSuggestions ? "chevron.up" : "chevron.down")
+                                    .font(.caption)
+                            }
                         }
                     }
                     
@@ -122,18 +128,26 @@ struct EnhancedShareView: View {
                                 .foregroundColor(.secondary)
                             
                             FlowLayout(spacing: 8) {
-                                ForEach(suggestedTags, id: \.self) { tag in
-                                    TagChip(tag: tag, isSelected: selectedTags.contains(tag)) {
-                                        if selectedTags.contains(tag) {
-                                            selectedTags.removeAll { $0 == tag }
+                                ForEach(suggestedTags, id: \.tag) { tagItem in
+                                    TagChip(tag: tagItem.tag, count: tagItem.count, isSelected: selectedTags.contains(tagItem.tag)) {
+                                        if selectedTags.contains(tagItem.tag) {
+                                            selectedTags.removeAll { $0 == tagItem.tag }
                                         } else {
-                                            selectedTags.append(tag)
+                                            selectedTags.append(tagItem.tag)
                                         }
                                     }
                                 }
                             }
                         }
                         .padding(.vertical, 4)
+                    }
+                    
+                    if showTagSuggestions && suggestedTags.isEmpty && !isLoadingTags {
+                        Text("No suggested tags yet. Start tagging bookmarks to see suggestions!")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .italic()
+                            .padding(.vertical, 4)
                     }
                 }
             }
@@ -190,22 +204,46 @@ struct EnhancedShareView: View {
     }
     
     private func loadSuggestedTags() {
-        // Load from shared container
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
-            return
+        isLoadingTags = true
+        
+        Task {
+            do {
+                let tags = try await fetchTagsFromAPI()
+                
+                await MainActor.run {
+                    self.suggestedTags = tags
+                    self.isLoadingTags = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.isLoadingTags = false
+                    // Silently fail - tags are optional
+                    print("Failed to load tag suggestions: \(error)")
+                }
+            }
+        }
+    }
+    
+    private func fetchTagsFromAPI() async throws -> [APITagItem] {
+        guard let authToken = getAuthToken() else {
+            throw URLError(.userAuthenticationRequired)
         }
         
-        let tagsURL = containerURL.appendingPathComponent("suggestedTags.json")
-        
-        guard FileManager.default.fileExists(atPath: tagsURL.path),
-              let data = try? Data(contentsOf: tagsURL),
-              let tags = try? JSONDecoder().decode([String].self, from: data) else {
-            // Default suggested tags
-            suggestedTags = ["article", "tutorial", "reference", "video", "tool"]
-            return
+        guard let apiURL = URL(string: "https://api.turbodoc.ai/v1/tags") else {
+            throw URLError(.badURL)
         }
         
-        suggestedTags = tags
+        var request = URLRequest(url: apiURL)
+        request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        
+        struct TagsResponse: Codable {
+            let data: [APITagItem]
+        }
+        
+        let response = try JSONDecoder().decode(TagsResponse.self, from: data)
+        return response.data
     }
     
     private func checkForDuplicates() {
@@ -289,8 +327,14 @@ struct ShareBookmarkData {
     let ogImageURL: String?
 }
 
+struct APITagItem: Codable {
+    let tag: String
+    let count: Int
+}
+
 struct TagChip: View {
     let tag: String
+    let count: Int?
     let isSelected: Bool
     let onTap: () -> Void
     
@@ -300,7 +344,18 @@ struct TagChip: View {
                 Text(tag)
                     .font(.caption)
                 
-                if isSelected {
+                if let count = count {
+                    Text("\(count)")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(chipCountBackgroundColor)
+                        .foregroundColor(chipCountForegroundColor)
+                        .clipShape(Capsule())
+                }
+                
+                if isSelected && count == nil {
                     Image(systemName: "xmark.circle.fill")
                         .font(.caption2)
                 }
@@ -310,8 +365,24 @@ struct TagChip: View {
             .background(isSelected ? Color.blue : Color(.systemGray5))
             .foregroundColor(isSelected ? .white : .primary)
             .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(chipBorderColor, lineWidth: isSelected ? 2 : 1)
+            )
         }
         .buttonStyle(PlainButtonStyle())
+    }
+    
+    private var chipBorderColor: Color {
+        isSelected ? .blue : Color(.systemGray4)
+    }
+    
+    private var chipCountBackgroundColor: Color {
+        isSelected ? Color.white.opacity(0.2) : Color(.systemGray4)
+    }
+    
+    private var chipCountForegroundColor: Color {
+        isSelected ? .white : .secondary
     }
 }
 
