@@ -2,6 +2,7 @@ import SwiftUI
 
 struct EnhancedShareView: View {
     let sharedURL: String
+    let sharedTitle: String?
     let onSave: (ShareBookmarkData) -> Void
     let onCancel: () -> Void
     
@@ -178,18 +179,20 @@ struct EnhancedShareView: View {
     private func loadMetadata() {
         isLoadingMetadata = true
         
-        // Extract domain for basic title
-        if let url = URL(string: sharedURL) {
+        // Use shared title if available, otherwise extract domain
+        if let sharedTitle = sharedTitle, !sharedTitle.isEmpty {
+            title = sharedTitle
+        } else if let url = URL(string: sharedURL) {
             title = url.host?.replacingOccurrences(of: "www.", with: "") ?? "Untitled"
         }
         
-        // Attempt to fetch OG metadata
+        // Attempt to fetch OG metadata (mainly for the image)
         Task {
             do {
                 let metadata = try await fetchOGMetadata(url: sharedURL)
                 await MainActor.run {
-                    // Only update title if user hasn't manually edited it
-                    if !hasUserEditedTitle, let fetchedTitle = metadata.title, !fetchedTitle.isEmpty {
+                    // Only update title if user hasn't manually edited it and we don't have a shared title
+                    if !hasUserEditedTitle, sharedTitle == nil, let fetchedTitle = metadata.title, !fetchedTitle.isEmpty {
                         self.title = fetchedTitle
                     }
                     self.ogImageURL = metadata.ogImage

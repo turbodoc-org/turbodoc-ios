@@ -28,6 +28,9 @@ class ShareViewController: UIViewController {
             return
         }
         
+        // Extract the page title from the extension item
+        let pageTitle = extensionItem.attributedContentText?.string ?? extensionItem.attributedTitle?.string
+        
         if itemProvider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
             itemProvider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { [weak self] (item, error) in
                 guard let url = item as? URL else {
@@ -36,7 +39,7 @@ class ShareViewController: UIViewController {
                 }
                 
                 DispatchQueue.main.async {
-                    self?.presentShareView(with: url.absoluteString)
+                    self?.presentShareView(with: url.absoluteString, title: pageTitle)
                 }
             }
         } else if itemProvider.hasItemConformingToTypeIdentifier(UTType.text.identifier) {
@@ -48,7 +51,7 @@ class ShareViewController: UIViewController {
                 }
                 
                 DispatchQueue.main.async {
-                    self?.presentShareView(with: url)
+                    self?.presentShareView(with: url, title: pageTitle)
                 }
             }
         } else {
@@ -73,9 +76,10 @@ class ShareViewController: UIViewController {
         return nil
     }
     
-    private func presentShareView(with url: String) {
+    private func presentShareView(with url: String, title: String?) {
         let shareView = EnhancedShareView(
             sharedURL: url,
+            sharedTitle: title,
             onSave: { [weak self] bookmarkData in
                 self?.saveBookmark(data: bookmarkData)
             },
