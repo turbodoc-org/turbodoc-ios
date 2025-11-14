@@ -13,9 +13,27 @@ struct HomeView: View {
     @State private var showingDeleteConfirmation = false
     @State private var bookmarkToDelete: BookmarkItem?
     @State private var showingAddBookmark = false
+    @State private var showingFilters = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var lastRefreshTime = Date()
     @AppStorage("viewMode") private var viewMode: ViewMode = .grid
+    
+    // Filter states
+    @State private var selectedStatus: BookmarkItem.ItemStatus? = nil
+    @State private var selectedTags: Set<String> = []
+    @State private var sortOption: SortOption = .dateAddedDesc
+    @State private var availableTags: [String] = []
+    
+    enum SortOption: String, CaseIterable, Identifiable {
+        case dateAddedDesc = "Newest First"
+        case dateAddedAsc = "Oldest First"
+        case dateModifiedDesc = "Recently Updated"
+        case dateModifiedAsc = "Least Recently Updated"
+        case titleAsc = "Title A-Z"
+        case titleDesc = "Title Z-A"
+        
+        var id: String { rawValue }
+    }
     
     var body: some View {
         NavigationView {
@@ -30,6 +48,17 @@ struct HomeView: View {
             }
             .navigationTitle("Bookmarks")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: {
+                        HapticManager.shared.selection()
+                        showingFilters.toggle()
+                    }) {
+                        Image(systemName: hasActiveFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                            .imageScale(.large)
+                            .foregroundColor(hasActiveFilters ? .blue : .primary)
+                    }
+                }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         HapticManager.shared.selection()
@@ -42,7 +71,16 @@ struct HomeView: View {
             }
             .searchable(text: $searchText, prompt: "Search bookmarks...")
             .onChange(of: searchText) {
-                performSearch(query: searchText)
+                applyFiltersAndSearch()
+            }
+            .onChange(of: selectedStatus) { _, _ in
+                applyFiltersAndSearch()
+            }
+            .onChange(of: selectedTags) { _, _ in
+                applyFiltersAndSearch()
+            }
+            .onChange(of: sortOption) { _, _ in
+                applyFiltersAndSearch()
             }
             .onAppear {
                 refreshBookmarksIfNeeded()
@@ -79,6 +117,15 @@ struct HomeView: View {
                     addBookmark(url: url, tags: tags)
                 })
             }
+            .sheet(isPresented: $showingFilters) {
+                FilterView(
+                    selectedStatus: $selectedStatus,
+                    selectedTags: $selectedTags,
+                    sortOption: $sortOption,
+                    availableTags: availableTags,
+                    onClearAll: clearAllFilters
+                )
+            }
             .onChange(of: quickActionService.currentAction) { _, action in
                 if action == .newBookmark {
                     showingAddBookmark = true
@@ -103,6 +150,14 @@ struct HomeView: View {
             }
         }
     }
+    
+    // MARK: - Computed Properties
+    
+    private var hasActiveFilters: Bool {
+        selectedStatus != nil || !selectedTags.isEmpty || sortOption != .dateAddedDesc
+    }
+    
+    // MARK: - Views
     
     private var loadingView: some View {
         VStack(spacing: 20) {
@@ -272,7 +327,8 @@ struct HomeView: View {
                 
                 await MainActor.run {
                     self.allBookmarks = fetchedBookmarks
-                    self.bookmarks = fetchedBookmarks
+                    self.extractAvailableTags()
+                    self.applyFiltersAndSearch()
                     self.isLoading = false
                 }
             } catch {
@@ -303,7 +359,8 @@ struct HomeView: View {
             
             await MainActor.run {
                 self.allBookmarks = fetchedBookmarks
-                self.bookmarks = fetchedBookmarks
+                self.extractAvailableTags()
+                self.applyFiltersAndSearch()
                 self.isRefreshing = false
             }
         } catch {
@@ -548,6 +605,245 @@ struct HomeView: View {
                     self.isSearching = false
                 }
             }
+        }
+    }
+    
+    // MARK: - Filter Methods
+    
+    private func applyFiltersAndSearch() {
+        var filtered = allBookmarks
+        
+        // Apply status filter
+        if let status = selectedStatus {
+            filtered = filtered.filter { $0.status == status }
+        }
+        
+        // Apply tag filter
+        if !selectedTags.isEmpty {
+            filtered = filtered.filter { bookmark in
+                !Set(bookmark.tags).isDisjoint(with: selectedTags)
+            }
+        }
+        
+        // Apply search filter
+        let trimmedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedQuery.isEmpty {
+            filtered = filtered.filter { bookmark in
+                bookmark.title.localizedCaseInsensitiveContains(trimmedQuery) ||
+                bookmark.url?.localizedCaseInsensitiveContains(trimmedQuery) == true ||
+                bookmark.tags.contains { tag in
+                    tag.localizedCaseInsensitiveContains(trimmedQuery)
+                }
+            }
+        }
+        
+        // Apply sorting
+        filtered = sortBookmarks(filtered, by: sortOption)
+        
+        bookmarks = filtered
+    }
+    
+    private func sortBookmarks(_ bookmarks: [BookmarkItem], by option: SortOption) -> [BookmarkItem] {
+        switch option {
+        case .dateAddedDesc:
+            return bookmarks.sorted { (a: BookmarkItem, b: BookmarkItem) in
+                a.timeAdded > b.timeAdded
+            }
+        case .dateAddedAsc:
+            return bookmarks.sorted { (a: BookmarkItem, b: BookmarkItem) in
+                a.timeAdded < b.timeAdded
+            }
+        case .dateModifiedDesc:
+            // No updatedAt property, use timeAdded as fallback
+            return bookmarks.sorted { (a: BookmarkItem, b: BookmarkItem) in
+                a.timeAdded > b.timeAdded
+            }
+        case .dateModifiedAsc:
+            // No updatedAt property, use timeAdded as fallback
+            return bookmarks.sorted { (a: BookmarkItem, b: BookmarkItem) in
+                a.timeAdded < b.timeAdded
+            }
+        case .titleAsc:
+            return bookmarks.sorted { (a: BookmarkItem, b: BookmarkItem) in
+                a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+            }
+        case .titleDesc:
+            return bookmarks.sorted { (a: BookmarkItem, b: BookmarkItem) in
+                a.title.localizedCaseInsensitiveCompare(b.title) == .orderedDescending
+            }
+        }
+    }
+    
+    private func clearAllFilters() {
+        selectedStatus = nil
+        selectedTags.removeAll()
+        sortOption = .dateAddedDesc
+        searchText = ""
+        HapticManager.shared.light()
+    }
+    
+    private func extractAvailableTags() {
+        var tags = Set<String>()
+        for bookmark in allBookmarks {
+            tags.formUnion(bookmark.tags)
+        }
+        availableTags = Array(tags).sorted()
+    }
+}
+
+// MARK: - Filter View
+
+struct FilterView: View {
+    @Binding var selectedStatus: BookmarkItem.ItemStatus?
+    @Binding var selectedTags: Set<String>
+    @Binding var sortOption: HomeView.SortOption
+    let availableTags: [String]
+    let onClearAll: () -> Void
+    
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            List {
+                // Status Filter Section
+                Section(header: Text("Status")) {
+                    ForEach([BookmarkItem.ItemStatus.unread, BookmarkItem.ItemStatus.read, BookmarkItem.ItemStatus.archived], id: \.self) { status in
+                        Button(action: {
+                            if selectedStatus == status {
+                                selectedStatus = nil
+                            } else {
+                                selectedStatus = status
+                            }
+                            HapticManager.shared.selection()
+                        }) {
+                            HStack {
+                                Circle()
+                                    .fill(colorForStatus(status))
+                                    .frame(width: 12, height: 12)
+                                
+                                Text(status.rawValue.capitalized)
+                                    .foregroundColor(.primary)
+                                
+                                Spacer()
+                                
+                                if selectedStatus == status {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                        }
+                    }
+                    
+                    if selectedStatus != nil {
+                        Button(action: {
+                            selectedStatus = nil
+                            HapticManager.shared.light()
+                        }) {
+                            HStack {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                                Text("Clear Status Filter")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+                
+                // Tag Filter Section
+                if !availableTags.isEmpty {
+                    Section(header: Text("Tags")) {
+                        ForEach(availableTags, id: \.self) { tag in
+                            Button(action: {
+                                if selectedTags.contains(tag) {
+                                    selectedTags.remove(tag)
+                                } else {
+                                    selectedTags.insert(tag)
+                                }
+                                HapticManager.shared.selection()
+                            }) {
+                                HStack {
+                                    Image(systemName: "tag.fill")
+                                        .font(.caption)
+                                        .foregroundColor(selectedTags.contains(tag) ? .blue : .secondary)
+                                    
+                                    Text(tag)
+                                        .foregroundColor(.primary)
+                                    
+                                    Spacer()
+                                    
+                                    if selectedTags.contains(tag) {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(.blue)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if !selectedTags.isEmpty {
+                            Button(action: {
+                                selectedTags.removeAll()
+                                HapticManager.shared.light()
+                            }) {
+                                HStack {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.secondary)
+                                    Text("Clear Tag Filters (\(selectedTags.count))")
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Sort Section
+                Section(header: Text("Sort By")) {
+                    ForEach(HomeView.SortOption.allCases) { option in
+                        Button(action: {
+                            sortOption = option
+                            HapticManager.shared.selection()
+                        }) {
+                            HStack {
+                                Text(option.rawValue)
+                                    .foregroundColor(.primary)
+                                
+                                Spacer()
+                                
+                                if sortOption == option {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Clear All") {
+                        onClearAll()
+                    }
+                    .disabled(selectedStatus == nil && selectedTags.isEmpty && sortOption == .dateAddedDesc)
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+    
+    private func colorForStatus(_ status: BookmarkItem.ItemStatus) -> Color {
+        switch status {
+        case .unread:
+            return .orange
+        case .read:
+            return .green
+        case .archived:
+            return .gray
         }
     }
 }
@@ -809,20 +1105,20 @@ struct BookmarkTileView: View {
     
     private var domainFallbackView: some View {
         Color(.systemGray5)
-        .overlay {
-            VStack(spacing: 4) {
-                Image(systemName: "globe")
-                    .font(.title2)
-                    .foregroundColor(.secondary)
-                if let url = bookmark.url {
-                    Text(domainFromURL(url))
-                        .font(.caption)
-                        .fontWeight(.medium)
+            .overlay {
+                VStack(spacing: 4) {
+                    Image(systemName: "globe")
+                        .font(.title2)
                         .foregroundColor(.secondary)
-                        .lineLimit(1)
+                    if let url = bookmark.url {
+                        Text(domainFromURL(url))
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
                 }
             }
-        }
     }
     
     private func fetchOgImageIfNeeded() {
@@ -901,7 +1197,7 @@ struct BookmarkTileView: View {
                 Label("Mark as Read", systemImage: "checkmark.circle")
             }
         }
-
+        
         if bookmark.status != .unread {
             Button(action: { 
                 HapticManager.shared.selection()
@@ -1130,7 +1426,7 @@ struct BookmarkCompactView: View {
                 Label("Mark as Read", systemImage: "checkmark.circle")
             }
         }
-
+        
         if bookmark.status != .unread {
             Button(action: { 
                 HapticManager.shared.selection()
