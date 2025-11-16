@@ -43,14 +43,12 @@ struct EditNoteView: View {
             Divider()
             
             // Markdown editor
-            MarkdownEditor(
-                text: $note.content,
-                placeholder: "Start writing your note...",
-                onTextChange: { _ in
+            MarkdownEditor(text: $note.content)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 16)
+                .onChange(of: note.content) {
                     scheduleAutoSave()
                 }
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
