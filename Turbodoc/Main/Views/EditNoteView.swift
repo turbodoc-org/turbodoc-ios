@@ -42,28 +42,15 @@ struct EditNoteView: View {
             
             Divider()
             
-            // Content editor with improved styling
-            VStack(alignment: .leading, spacing: 0) {
-                TextEditor(text: $note.content)
-                    .font(.body)
-                    .lineSpacing(2)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 20)
-                    .background(Color(.systemBackground))
-                    .onChange(of: note.content) {
-                        scheduleAutoSave()
-                    }
-                    .overlay(alignment: .topLeading) {
-                        if note.content.isEmpty {
-                            Text("Start writing your note...")
-                                .font(.body)
-                                .foregroundColor(.secondary.opacity(0.6))
-                                .padding(.horizontal, 21)
-                                .padding(.vertical, 28)
-                                .allowsHitTesting(false)
-                        }
-                    }
-            }
+            // Markdown editor
+            MarkdownEditor(
+                text: $note.content,
+                placeholder: "Start writing your note...",
+                onTextChange: { _ in
+                    scheduleAutoSave()
+                }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
