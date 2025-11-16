@@ -16,11 +16,12 @@ struct NotesView: View {
     @State private var noteToEdit: NoteItem?
     @Environment(\.scenePhase) private var scenePhase
     @State private var lastRefreshTime = Date()
+    @AppStorage("notesViewMode") private var viewMode: ViewMode = .grid
     
     // Grid layout - 2 columns with improved spacing
     private let columns = [
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8)
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
     ]
     
     var body: some View {
@@ -35,6 +36,17 @@ struct NotesView: View {
                 }
             }
             .navigationTitle("Notes")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        HapticManager.shared.selection()
+                        viewMode = viewMode == .grid ? .list : .grid
+                    }) {
+                        Image(systemName: viewMode == .grid ? "list.bullet" : "square.grid.2x2")
+                            .imageScale(.large)
+                    }
+                }
+            }
             .searchable(text: $searchText, prompt: "Search notes...")
             .onChange(of: searchText) {
                 performSearch(query: searchText)
@@ -170,6 +182,16 @@ struct NotesView: View {
     }
     
     private var notesGrid: some View {
+        Group {
+            if viewMode == .grid {
+                gridView
+            } else {
+                listView
+            }
+        }
+    }
+    
+    private var gridView: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(notes, id: \.id) { note in
@@ -188,6 +210,26 @@ struct NotesView: View {
             .padding(.top, 12)
             .padding(.bottom, 100) // Space for floating action button
         }
+        .refreshable {
+            await refreshNotes()
+        }
+    }
+    
+    private var listView: some View {
+        List(notes, id: \.id) { note in
+            NoteListRowView(
+                note: note,
+                onEdit: { noteToEdit in
+                    self.noteToEdit = noteToEdit
+                },
+                onDelete: { noteToDelete in
+                    confirmDeleteNote(noteToDelete)
+                }
+            )
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowSeparator(.hidden)
+        }
+        .listStyle(PlainListStyle())
         .refreshable {
             await refreshNotes()
         }

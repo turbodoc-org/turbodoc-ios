@@ -176,31 +176,63 @@ struct HomeView: View {
         VStack(spacing: 30) {
             Spacer()
             
-            Image(systemName: "bookmark")
+            Image(systemName: hasActiveFilters || !searchText.isEmpty ? "magnifyingglass" : "bookmark")
                 .font(.system(size: 80))
                 .foregroundColor(.blue)
             
             VStack(spacing: 16) {
-                Text("No Bookmarks Yet")
+                Text(emptyStateTitle)
                     .font(.largeTitle)
                     .fontWeight(.bold)
                 
-                Text("Your saved content will appear here")
+                Text(emptyStateMessage)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                 
-                if let errorMessage = errorMessage {
+                // Only show error if there's an actual error, not when filters return no results
+                if let errorMessage = errorMessage, !hasActiveFilters && searchText.isEmpty {
                     Text(errorMessage)
                         .font(.caption)
                         .foregroundColor(.red)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                 }
+                
+                // Show clear filters button when filters are active
+                if hasActiveFilters || !searchText.isEmpty {
+                    Button(action: clearAllFilters) {
+                        Text("Clear Filters")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.blue)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(8)
+                    }
+                    .padding(.top, 8)
+                }
             }
             
             Spacer()
         }
+    }
+    
+    private var emptyStateTitle: String {
+        if hasActiveFilters || !searchText.isEmpty {
+            return "No Results Found"
+        }
+        return "No Bookmarks Yet"
+    }
+    
+    private var emptyStateMessage: String {
+        if !searchText.isEmpty {
+            return "No bookmarks match '\(searchText)'"
+        } else if hasActiveFilters {
+            return "No bookmarks match your filters"
+        }
+        return "Your saved content will appear here"
     }
     
     private var bookmarksList: some View {
@@ -412,7 +444,7 @@ struct HomeView: View {
                     }
                     HapticManager.shared.success()
                 }
-            } catch let networkError as NetworkError {                
+            } catch let networkError as NetworkError {
                 // Check if it's a decoding error but the request was successful
                 if case .decodingError(let decodingError) = networkError {
                     // Optimistically update the UI since the API call likely succeeded
@@ -612,6 +644,11 @@ struct HomeView: View {
     
     private func applyFiltersAndSearch() {
         var filtered = allBookmarks
+        
+        // Clear error message when actively filtering (not an error, just no results)
+        if hasActiveFilters || !searchText.isEmpty {
+            errorMessage = nil
+        }
         
         // Apply status filter
         if let status = selectedStatus {
@@ -1188,7 +1225,7 @@ struct BookmarkTileView: View {
         Divider()
         
         if bookmark.status != .read {
-            Button(action: { 
+            Button(action: {
                 HapticManager.shared.selection()
                 var updatedBookmark = bookmark
                 updatedBookmark.status = .read
@@ -1199,7 +1236,7 @@ struct BookmarkTileView: View {
         }
         
         if bookmark.status != .unread {
-            Button(action: { 
+            Button(action: {
                 HapticManager.shared.selection()
                 var updatedBookmark = bookmark
                 updatedBookmark.status = .unread
@@ -1210,7 +1247,7 @@ struct BookmarkTileView: View {
         }
         
         if bookmark.status != .archived {
-            Button(action: { 
+            Button(action: {
                 HapticManager.shared.selection()
                 var updatedBookmark = bookmark
                 updatedBookmark.status = .archived
@@ -1417,7 +1454,7 @@ struct BookmarkCompactView: View {
         Divider()
         
         if bookmark.status != .read {
-            Button(action: { 
+            Button(action: {
                 HapticManager.shared.selection()
                 var updatedBookmark = bookmark
                 updatedBookmark.status = .read
@@ -1428,7 +1465,7 @@ struct BookmarkCompactView: View {
         }
         
         if bookmark.status != .unread {
-            Button(action: { 
+            Button(action: {
                 HapticManager.shared.selection()
                 var updatedBookmark = bookmark
                 updatedBookmark.status = .unread
@@ -1439,7 +1476,7 @@ struct BookmarkCompactView: View {
         }
         
         if bookmark.status != .archived {
-            Button(action: { 
+            Button(action: {
                 HapticManager.shared.selection()
                 var updatedBookmark = bookmark
                 updatedBookmark.status = .archived
