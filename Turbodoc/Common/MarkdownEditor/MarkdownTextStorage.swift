@@ -60,15 +60,15 @@ class MarkdownTextStorage: NSTextStorage {
     }
     
     private func applyHeaders(in range: NSRange, nsString: NSString) {
-        let headerPattern = "^(#{1,6})\\s+(.+)$"
+        let headerPattern = "^[ \t]*(#{1,6})\\s+(.+)$"
         guard let regex = try? NSRegularExpression(pattern: headerPattern, options: .anchorsMatchLines) else { return }
         
         regex.enumerateMatches(in: nsString as String, options: [], range: range) { match, _, _ in
             guard let match = match else { return }
             
+            let fullRange = match.range
             let headerLevel = match.range(at: 1).length
             let headerTextRange = match.range(at: 2)
-            let _ = match.range
             
             // Font size based on header level
             let fontSize: CGFloat = {
@@ -85,9 +85,32 @@ class MarkdownTextStorage: NSTextStorage {
             
             let headerFont = UIFont.boldSystemFont(ofSize: fontSize)
             
+            // Remove any leading whitespace indentation for headers
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.firstLineHeadIndent = 0
+            paragraphStyle.headIndent = 0
+            storage.addAttribute(.paragraphStyle, value: paragraphStyle, range: fullRange)
+            
+            // Completely hide leading whitespace and the ## markers by making them tiny
+            let text = nsString.substring(with: fullRange)
+            if let hashRange = text.range(of: "#") {
+                let leadingWhitespaceLength = text.distance(from: text.startIndex, to: hashRange.lowerBound)
+                if leadingWhitespaceLength > 0 {
+                    let tinyFont = UIFont.systemFont(ofSize: 0.1)
+                    storage.addAttribute(.font, value: tinyFont, range: NSRange(location: fullRange.location, length: leadingWhitespaceLength))
+                    storage.addAttribute(.foregroundColor, value: UIColor.clear, range: NSRange(location: fullRange.location, length: leadingWhitespaceLength))
+                }
+            }
+            
             // Hide the ## markers
+            let tinyFont = UIFont.systemFont(ofSize: 0.1)
+            storage.addAttribute(.font, value: tinyFont, range: match.range(at: 1))
             storage.addAttribute(.foregroundColor, value: UIColor.clear, range: match.range(at: 1))
-            storage.addAttribute(.foregroundColor, value: UIColor.clear, range: NSRange(location: match.range(at: 1).upperBound, length: 1))
+            
+            // Hide the space after ##
+            let spaceAfterHashRange = NSRange(location: match.range(at: 1).upperBound, length: 1)
+            storage.addAttribute(.font, value: tinyFont, range: spaceAfterHashRange)
+            storage.addAttribute(.foregroundColor, value: UIColor.clear, range: spaceAfterHashRange)
             
             // Style the header text
             storage.addAttribute(.font, value: headerFont, range: headerTextRange)
