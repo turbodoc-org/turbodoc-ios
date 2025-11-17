@@ -48,6 +48,8 @@ class MarkdownTextStorage: NSTextStorage {
         storage.setAttributes(baseAttributes, range: range)
         
         // Apply markdown styling in order of precedence
+        // Lists must be applied before italic to prevent * from being treated as italic
+        applyLists(in: range, nsString: nsString)
         applyHeaders(in: range, nsString: nsString)
         applyCodeBlocks(in: range, nsString: nsString)
         applyInlineCode(in: range, nsString: nsString)
@@ -55,7 +57,6 @@ class MarkdownTextStorage: NSTextStorage {
         applyItalic(in: range, nsString: nsString)
         applyStrikethrough(in: range, nsString: nsString)
         applyLinks(in: range, nsString: nsString)
-        applyLists(in: range, nsString: nsString)
     }
     
     private func applyHeaders(in range: NSRange, nsString: NSString) {
@@ -67,7 +68,7 @@ class MarkdownTextStorage: NSTextStorage {
             
             let headerLevel = match.range(at: 1).length
             let headerTextRange = match.range(at: 2)
-            let fullRange = match.range
+            let _ = match.range
             
             // Font size based on header level
             let fontSize: CGFloat = {
@@ -138,6 +139,7 @@ class MarkdownTextStorage: NSTextStorage {
     }
     
     private func applyBold(in range: NSRange, nsString: NSString) {
+        // Pattern for **bold** or __bold__
         let boldPattern = "\\*\\*(.+?)\\*\\*|__(.+?)__"
         guard let regex = try? NSRegularExpression(pattern: boldPattern, options: []) else { return }
         
@@ -160,8 +162,10 @@ class MarkdownTextStorage: NSTextStorage {
     }
     
     private func applyItalic(in range: NSRange, nsString: NSString) {
-        let italicPattern = "(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)"
-        guard let regex = try? NSRegularExpression(pattern: italicPattern, options: []) else { return }
+        // Pattern that avoids matching asterisks at the start of lines (list markers)
+        // E.g. *italic* but not list markers like * item
+        let italicPattern = "(?<!\\*)(?<!^\\s*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)"
+        guard let regex = try? NSRegularExpression(pattern: italicPattern, options: .anchorsMatchLines) else { return }
         
         regex.enumerateMatches(in: nsString as String, options: [], range: range) { match, _, _ in
             guard let match = match else { return }
@@ -217,42 +221,33 @@ class MarkdownTextStorage: NSTextStorage {
     
     private func applyLists(in range: NSRange, nsString: NSString) {
         // Unordered lists
-        let unorderedListPattern = "^[\\s]*[-*+]\\s+(.+)$"
+        let unorderedListPattern = "^([\\s]*)([-*+])\\s+(.*)$"
         if let regex = try? NSRegularExpression(pattern: unorderedListPattern, options: .anchorsMatchLines) {
             regex.enumerateMatches(in: nsString as String, options: [], range: range) { match, _, _ in
                 guard let match = match else { return }
                 
                 let fullRange = match.range
-                let bulletRange = NSRange(location: fullRange.location, length: 2)
                 
-                // Hide the markdown bullet
-                storage.addAttribute(.foregroundColor, value: UIColor.clear, range: bulletRange)
-                
-                // Add a styled bullet
+                // Apply consistent indentation for all list items
                 let paragraphStyle = NSMutableParagraphStyle()
-                paragraphStyle.firstLineHeadIndent = 0
+                paragraphStyle.firstLineHeadIndent = 20
                 paragraphStyle.headIndent = 20
                 storage.addAttribute(.paragraphStyle, value: paragraphStyle, range: fullRange)
             }
         }
         
         // Ordered lists
-        let orderedListPattern = "^[\\s]*(\\d+)\\.\\s+(.+)$"
+        let orderedListPattern = "^([\\s]*)(\\d+)\\.\\s+(.*)$"
         if let regex = try? NSRegularExpression(pattern: orderedListPattern, options: .anchorsMatchLines) {
             regex.enumerateMatches(in: nsString as String, options: [], range: range) { match, _, _ in
                 guard let match = match else { return }
                 
                 let fullRange = match.range
-                let numberRange = match.range(at: 1)
-                let dotSpaceRange = NSRange(location: numberRange.upperBound, length: 2)
                 
-                // Hide the dot and space
-                storage.addAttribute(.foregroundColor, value: UIColor.clear, range: dotSpaceRange)
-                
-                // Add indentation
+                // Apply consistent indentation for all numbered items
                 let paragraphStyle = NSMutableParagraphStyle()
-                paragraphStyle.firstLineHeadIndent = 0
-                paragraphStyle.headIndent = 25
+                paragraphStyle.firstLineHeadIndent = 20
+                paragraphStyle.headIndent = 20
                 storage.addAttribute(.paragraphStyle, value: paragraphStyle, range: fullRange)
             }
         }
