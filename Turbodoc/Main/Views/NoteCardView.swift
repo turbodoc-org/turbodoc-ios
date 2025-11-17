@@ -9,7 +9,7 @@ struct NoteCardView: View {
     
     var body: some View {
         cardContent
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .aspectRatio(1, contentMode: .fit) // Keep square aspect ratio
             .background(cardBackground)
             .scaleEffect(isPressed ? 0.95 : 1.0)
@@ -21,13 +21,12 @@ struct NoteCardView: View {
             )
             .animation(.easeInOut(duration: 0.15), value: isPressed)
             .onTapGesture {
+                HapticManager.shared.light()
                 onEdit(note)
             }
-            .onLongPressGesture {
+            .onLongPressGesture(minimumDuration: 0.5) {
+                HapticManager.shared.medium()
                 onDelete(note)
-            }
-            .onPressStateChanged { pressed in
-                isPressed = pressed
             }
     }
     
@@ -41,6 +40,7 @@ struct NoteCardView: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .foregroundColor(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 
                 if !note.content.isEmpty {
                     Text(note.previewContent)
@@ -49,14 +49,17 @@ struct NoteCardView: View {
                         .lineLimit(5)
                         .multilineTextAlignment(.leading)
                         .lineSpacing(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 16)
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
             
-            Spacer()
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
     
     private var cardBackground: some View {
@@ -71,29 +74,5 @@ struct NoteCardView: View {
     private func wordCount(_ text: String) -> Int {
         let words = text.components(separatedBy: .whitespacesAndNewlines)
         return words.filter { !$0.isEmpty }.count
-    }
-}
-
-// Custom modifier for press state
-struct PressStateModifier: ViewModifier {
-    let onPressStateChanged: (Bool) -> Void
-    
-    func body(content: Content) -> some View {
-        content
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        onPressStateChanged(true)
-                    }
-                    .onEnded { _ in
-                        onPressStateChanged(false)
-                    }
-            )
-    }
-}
-
-extension View {
-    func onPressStateChanged(_ action: @escaping (Bool) -> Void) -> some View {
-        self.modifier(PressStateModifier(onPressStateChanged: action))
     }
 }

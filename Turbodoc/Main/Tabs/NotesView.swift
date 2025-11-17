@@ -20,8 +20,8 @@ struct NotesView: View {
     
     // Grid layout - 2 columns with improved spacing
     private let columns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12)
+        GridItem(.flexible(), spacing: 16),
+        GridItem(.flexible(), spacing: 16)
     ]
     
     var body: some View {
@@ -193,7 +193,7 @@ struct NotesView: View {
     
     private var gridView: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 8) {
+            LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(notes, id: \.id) { note in
                     NoteCardView(
                         note: note,
@@ -206,8 +206,8 @@ struct NotesView: View {
                     )
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 12)
+            .padding(.horizontal, 16)
+            .padding(.top, 20)
             .padding(.bottom, 100) // Space for floating action button
         }
         .refreshable {
