@@ -24,25 +24,11 @@ struct AddNoteView: View {
                 
                 Divider()
                 
-                // Content editor with improved styling
-                VStack(alignment: .leading, spacing: 0) {
-                    TextEditor(text: $content)
-                        .font(.body)
-                        .lineSpacing(2)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 20)
-                        .background(Color(.systemBackground))
-                        .overlay(alignment: .topLeading) {
-                            if content.isEmpty {
-                                Text("Start writing your note...")
-                                    .font(.body)
-                                    .foregroundColor(.secondary.opacity(0.6))
-                                    .padding(.horizontal, 21)
-                                    .padding(.vertical, 28)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                }
+                // Markdown editor
+                MarkdownEditor(text: $content)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 16)
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
