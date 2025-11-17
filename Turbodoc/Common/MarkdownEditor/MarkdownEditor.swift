@@ -6,7 +6,7 @@ struct MarkdownEditor: UIViewRepresentable {
     
     func makeUIView(context: Context) -> MarkdownTextView {
         let textView = MarkdownTextView()
-        textView.markdownDelegate = context.coordinator
+        textView.externalDelegate = context.coordinator
         return textView
     }
     
