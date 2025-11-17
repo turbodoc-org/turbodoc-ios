@@ -28,6 +28,7 @@ struct AddNoteView: View {
                 MarkdownEditor(text: $content)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.horizontal, 16)
+                    .padding(.vertical, 16)
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)

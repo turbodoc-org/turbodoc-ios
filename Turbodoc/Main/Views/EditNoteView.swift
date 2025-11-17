@@ -46,6 +46,7 @@ struct EditNoteView: View {
             MarkdownEditor(text: $note.content)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 16)
+                .padding(.vertical, 16)
                 .onChange(of: note.content) {
                     scheduleAutoSave()
                 }
