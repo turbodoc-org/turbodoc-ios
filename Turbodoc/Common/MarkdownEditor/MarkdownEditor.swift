@@ -11,10 +11,11 @@ struct MarkdownEditor: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: MarkdownTextView, context: Context) {
-        // Only update if the text has actually changed to avoid cursor jumping
-        if uiView.markdownText != text {
-            uiView.markdownText = text
+        // Only update if the text has actually changed AND it's not from internal editing
+        if uiView.text != text && !context.coordinator.isInternalChange {
+            uiView.text = text
         }
+        context.coordinator.isInternalChange = false
     }
     
     func makeCoordinator() -> Coordinator {
@@ -23,15 +24,15 @@ struct MarkdownEditor: UIViewRepresentable {
     
     class Coordinator: NSObject, UITextViewDelegate {
         var parent: MarkdownEditor
+        var isInternalChange = false
         
         init(_ parent: MarkdownEditor) {
             self.parent = parent
         }
         
         func textViewDidChange(_ textView: UITextView) {
-            DispatchQueue.main.async {
-                self.parent.text = textView.text ?? ""
-            }
+            isInternalChange = true
+            parent.text = textView.text ?? ""
         }
     }
 }
