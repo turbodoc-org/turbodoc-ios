@@ -56,7 +56,10 @@ struct NotesView: View {
             }
             .onChange(of: scenePhase) {
                 if scenePhase == .active && authService.isAuthenticated {
-                    refreshNotesIfNeeded()
+                    // Always refresh when app becomes active to get latest data
+                    Task {
+                        await refreshNotes()
+                    }
                 }
             }
             .onChange(of: authService.isAuthenticated) {
