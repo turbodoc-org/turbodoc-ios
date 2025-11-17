@@ -48,9 +48,10 @@ class MarkdownTextStorage: NSTextStorage {
         storage.setAttributes(baseAttributes, range: range)
         
         // Apply markdown styling in order of precedence
+        // Headers must be applied before lists to prevent indentation from list patterns
+        applyHeaders(in: range, nsString: nsString)
         // Lists must be applied before italic to prevent * from being treated as italic
         applyLists(in: range, nsString: nsString)
-        applyHeaders(in: range, nsString: nsString)
         applyCodeBlocks(in: range, nsString: nsString)
         applyInlineCode(in: range, nsString: nsString)
         applyBold(in: range, nsString: nsString)
@@ -60,7 +61,7 @@ class MarkdownTextStorage: NSTextStorage {
     }
     
     private func applyHeaders(in range: NSRange, nsString: NSString) {
-        let headerPattern = "^[ \t]*(#{1,6})\\s+(.+)$"
+        let headerPattern = "^[ \t]*(#{1,6})(\\s+(.*))?$"
         guard let regex = try? NSRegularExpression(pattern: headerPattern, options: .anchorsMatchLines) else { return }
         
         regex.enumerateMatches(in: nsString as String, options: [], range: range) { match, _, _ in
@@ -68,7 +69,10 @@ class MarkdownTextStorage: NSTextStorage {
             
             let fullRange = match.range
             let headerLevel = match.range(at: 1).length
-            let headerTextRange = match.range(at: 2)
+            
+            // Get header text range (capture group 3, if it exists)
+            let headerTextRange = match.range(at: 3)
+            let hasContent = headerTextRange.location != NSNotFound && headerTextRange.length > 0
             
             // Font size based on header level
             let fontSize: CGFloat = {
@@ -91,7 +95,7 @@ class MarkdownTextStorage: NSTextStorage {
             paragraphStyle.headIndent = 0
             storage.addAttribute(.paragraphStyle, value: paragraphStyle, range: fullRange)
             
-            // Completely hide leading whitespace and the ## markers by making them tiny
+            // Hide leading whitespace before ##
             let text = nsString.substring(with: fullRange)
             if let hashRange = text.range(of: "#") {
                 let leadingWhitespaceLength = text.distance(from: text.startIndex, to: hashRange.lowerBound)
@@ -102,19 +106,39 @@ class MarkdownTextStorage: NSTextStorage {
                 }
             }
             
-            // Hide the ## markers
+            // Hide the ## markers with a tiny font so they don't take up space
             let tinyFont = UIFont.systemFont(ofSize: 0.1)
             storage.addAttribute(.font, value: tinyFont, range: match.range(at: 1))
             storage.addAttribute(.foregroundColor, value: UIColor.clear, range: match.range(at: 1))
             
-            // Hide the space after ##
-            let spaceAfterHashRange = NSRange(location: match.range(at: 1).upperBound, length: 1)
-            storage.addAttribute(.font, value: tinyFont, range: spaceAfterHashRange)
-            storage.addAttribute(.foregroundColor, value: UIColor.clear, range: spaceAfterHashRange)
-            
-            // Style the header text
-            storage.addAttribute(.font, value: headerFont, range: headerTextRange)
-            storage.addAttribute(.foregroundColor, value: UIColor.label, range: headerTextRange)
+            // Apply header font to space and content after ##
+            if match.range(at: 2).location != NSNotFound && match.range(at: 2).length > 0 {
+                let spaceAndContentRange = match.range(at: 2)
+                
+                // Apply header font to the space + content
+                storage.addAttribute(.font, value: headerFont, range: spaceAndContentRange)
+                
+                // Find how many leading spaces there are and hide them
+                let spaceContent = nsString.substring(with: spaceAndContentRange)
+                var spaceCount = 0
+                for char in spaceContent {
+                    if char == " " || char == "\t" {
+                        spaceCount += 1
+                    } else {
+                        break
+                    }
+                }
+                
+                if spaceCount > 0 {
+                    let spacesRange = NSRange(location: spaceAndContentRange.location, length: spaceCount)
+                    storage.addAttribute(.foregroundColor, value: UIColor.clear, range: spacesRange)
+                }
+                
+                // Style the content text
+                if hasContent {
+                    storage.addAttribute(.foregroundColor, value: UIColor.label, range: headerTextRange)
+                }
+            }
         }
     }
     
