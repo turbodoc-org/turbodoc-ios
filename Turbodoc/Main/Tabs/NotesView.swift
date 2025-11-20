@@ -17,6 +17,8 @@ struct NotesView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var lastRefreshTime = Date()
     @AppStorage("notesViewMode") private var viewMode: ViewMode = .grid
+    @AppStorage("notesFilterSelection") private var selectedFilter: String = "all"
+    @AppStorage("notesSortOrder") private var sortOrder: String = "date_newest"
     
     // Grid layout - 2 columns with improved spacing
     private let columns = [
@@ -24,19 +26,61 @@ struct NotesView: View {
         GridItem(.flexible(), spacing: 16)
     ]
     
+    private var filterItems: [FilterPillsBar.FilterItem] {
+        let favoriteCount = allNotes.filter { $0.isFavorite }.count
+        let recentCount = allNotes.filter {
+            Calendar.current.isDate($0.createdAt, equalTo: Date(), toGranularity: .weekOfYear)
+        }.count
+        
+        return [
+            .init(id: "all", title: "All", count: allNotes.count),
+            .init(id: "favorites", title: "Favorites", count: favoriteCount),
+            .init(id: "recent", title: "Recent", count: recentCount)
+        ]
+    }
+    
     var body: some View {
         NavigationStack {
-            VStack {
+            VStack(spacing: 0) {
                 if isLoading {
                     loadingView
-                } else if notes.isEmpty {
-                    emptyStateView
                 } else {
-                    notesGrid
+                    // Always show filter pills when we have notes (even if filtered result is empty)
+                    if !allNotes.isEmpty {
+                        FilterPillsBar(
+                            filters: filterItems,
+                            selectedFilter: selectedFilter,
+                            onSelect: { filterId in
+                                selectedFilter = filterId
+                                applyFilter()
+                            }
+                        )
+                    }
+                    
+                    if notes.isEmpty {
+                        emptyStateView
+                    } else {
+                        notesGrid
+                    }
                 }
             }
             .navigationTitle("Notes")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Menu {
+                        Picker("Sort", selection: $sortOrder) {
+                            Text("Newest First").tag("date_newest")
+                            Text("Oldest First").tag("date_oldest")
+                            Text("Recently Modified").tag("modified")
+                            Text("A-Z").tag("alpha_asc")
+                            Text("Z-A").tag("alpha_desc")
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down.circle")
+                            .imageScale(.large)
+                    }
+                }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         HapticManager.shared.selection()
@@ -50,6 +94,9 @@ struct NotesView: View {
             .searchable(text: $searchText, prompt: "Search notes...")
             .onChange(of: searchText) {
                 performSearch(query: searchText)
+            }
+            .onChange(of: sortOrder) {
+                applyFilter()
             }
             .onAppear {
                 refreshNotesIfNeeded()
@@ -205,6 +252,9 @@ struct NotesView: View {
                         },
                         onDelete: { noteToDelete in
                             confirmDeleteNote(noteToDelete)
+                        },
+                        onToggleFavorite: { noteToToggle in
+                            toggleFavorite(noteToToggle)
                         }
                     )
                 }
@@ -261,6 +311,37 @@ struct NotesView: View {
         }
     }
     
+    private func applyFilter() {
+        var filtered = allNotes
+        
+        // Apply selected filter
+        switch selectedFilter {
+        case "favorites":
+            filtered = filtered.filter { $0.isFavorite }
+        case "recent":
+            let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+            filtered = filtered.filter { $0.createdAt >= weekAgo }
+        default: // "all"
+            break
+        }
+        
+        // Apply sorting
+        switch sortOrder {
+        case "date_oldest":
+            filtered.sort { $0.createdAt < $1.createdAt }
+        case "alpha_asc":
+            filtered.sort { ($0.title ?? $0.displayTitle).localizedCaseInsensitiveCompare($1.title ?? $1.displayTitle) == .orderedAscending }
+        case "alpha_desc":
+            filtered.sort { ($0.title ?? $0.displayTitle).localizedCaseInsensitiveCompare($1.title ?? $1.displayTitle) == .orderedDescending }
+        case "modified":
+            filtered.sort { $0.updatedAt > $1.updatedAt }
+        default: // "date_newest"
+            filtered.sort { $0.createdAt > $1.createdAt }
+        }
+        
+        notes = filtered
+    }
+    
     private func loadNotes() {
         guard let user = authService.currentUser else {
             return
@@ -282,6 +363,7 @@ struct NotesView: View {
                 await MainActor.run {
                     self.allNotes = fetchedNotes
                     self.notes = fetchedNotes
+                    self.applyFilter()
                     self.isLoading = false
                 }
             } catch {
@@ -313,6 +395,7 @@ struct NotesView: View {
             await MainActor.run {
                 self.allNotes = fetchedNotes
                 self.notes = fetchedNotes
+                self.applyFilter()
                 self.isRefreshing = false
             }
         } catch {
@@ -341,6 +424,48 @@ struct NotesView: View {
                 await MainActor.run {
                     self.errorMessage = "Failed to delete note: \(error.localizedDescription)"
                     self.noteToDelete = nil
+                }
+            }
+        }
+    }
+    
+    private func toggleFavorite(_ note: NoteItem) {
+        // Optimistic UI update
+        note.isFavorite.toggle()
+        
+        // Update in local arrays
+        if let index = notes.firstIndex(where: { $0.id == note.id }) {
+            notes[index] = note
+        }
+        if let index = allNotes.firstIndex(where: { $0.id == note.id }) {
+            allNotes[index] = note
+        }
+        
+        // Save to server in background
+        Task {
+            do {
+                let updatedNote = try await APIService.shared.updateNote(note)
+                
+                await MainActor.run {
+                    // Update with server response
+                    if let index = self.notes.firstIndex(where: { $0.id == note.id }) {
+                        self.notes[index] = updatedNote
+                    }
+                    if let index = self.allNotes.firstIndex(where: { $0.id == note.id }) {
+                        self.allNotes[index] = updatedNote
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    // Revert optimistic update on error
+                    note.isFavorite.toggle()
+                    if let index = self.notes.firstIndex(where: { $0.id == note.id }) {
+                        self.notes[index] = note
+                    }
+                    if let index = self.allNotes.firstIndex(where: { $0.id == note.id }) {
+                        self.allNotes[index] = note
+                    }
+                    self.errorMessage = "Failed to update favorite status"
                 }
             }
         }

@@ -4,6 +4,7 @@ struct NoteCardView: View {
     let note: NoteItem
     let onEdit: (NoteItem) -> Void
     let onDelete: (NoteItem) -> Void
+    let onToggleFavorite: (NoteItem) -> Void
     
     @State private var isPressed = false
     
@@ -12,6 +13,9 @@ struct NoteCardView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .aspectRatio(1, contentMode: .fit) // Keep square aspect ratio
             .background(cardBackground)
+            .overlay(alignment: .topTrailing) {
+                favoriteButton
+            }
             .scaleEffect(isPressed ? 0.95 : 1.0)
             .shadow(
                 color: Color.black.opacity(0.1),
@@ -28,6 +32,19 @@ struct NoteCardView: View {
                 HapticManager.shared.medium()
                 onDelete(note)
             }
+    }
+    
+    private var favoriteButton: some View {
+        Button(action: {
+            HapticManager.shared.light()
+            onToggleFavorite(note)
+        }) {
+            Image(systemName: note.isFavorite ? "star.fill" : "star")
+                .font(.system(size: 18))
+                .foregroundColor(note.isFavorite ? .yellow : .gray)
+                .padding(12)
+        }
+        .buttonStyle(.plain)
     }
     
     private var cardContent: some View {

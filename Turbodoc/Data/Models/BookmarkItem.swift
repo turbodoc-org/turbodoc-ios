@@ -10,6 +10,7 @@ class BookmarkItem {
     var timeAdded: Date
     var tags: [String]
     var status: ItemStatus
+    var isFavorite: Bool
     var userId: String
     var localFilePath: String?
     var textContent: String?
@@ -18,6 +19,7 @@ class BookmarkItem {
     var fileName: String?
     var fileSize: Int64
     var metadata: [String: String]?
+    var syncedAt: Date?
     
     enum ContentType: String, CaseIterable, Codable {
         case link = "link"
@@ -42,6 +44,7 @@ class BookmarkItem {
         self.timeAdded = Date()
         self.tags = []
         self.status = .unread
+        self.isFavorite = false
         self.ogImageURL = nil
         self.fileName = nil
         self.fileSize = 0

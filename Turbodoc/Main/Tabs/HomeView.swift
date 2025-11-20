@@ -17,6 +17,7 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var lastRefreshTime = Date()
     @AppStorage("viewMode") private var viewMode: ViewMode = .grid
+    @AppStorage("bookmarksFilter") private var selectedFilter: String = "all"
     
     // Filter states
     @State private var selectedStatus: BookmarkItem.ItemStatus? = nil
@@ -37,13 +38,27 @@ struct HomeView: View {
     
     var body: some View {
         NavigationView {
-            VStack {
+            VStack(spacing: 0) {
                 if isLoading {
                     loadingView
-                } else if bookmarks.isEmpty {
-                    emptyStateView
                 } else {
-                    bookmarksList
+                    // Always show filter pills when we have bookmarks
+                    if !allBookmarks.isEmpty {
+                        FilterPillsBar(
+                            filters: filterItems,
+                            selectedFilter: selectedFilter,
+                            onSelect: { filterId in
+                                selectedFilter = filterId
+                                applyFilterPills()
+                            }
+                        )
+                    }
+                    
+                    if bookmarks.isEmpty {
+                        emptyStateView
+                    } else {
+                        bookmarksList
+                    }
                 }
             }
             .navigationTitle("Bookmarks")
@@ -71,16 +86,16 @@ struct HomeView: View {
             }
             .searchable(text: $searchText, prompt: "Search bookmarks...")
             .onChange(of: searchText) {
-                applyFiltersAndSearch()
+                applyFilterPills()
             }
             .onChange(of: selectedStatus) { _, _ in
-                applyFiltersAndSearch()
+                applyFilterPills()
             }
             .onChange(of: selectedTags) { _, _ in
-                applyFiltersAndSearch()
+                applyFilterPills()
             }
             .onChange(of: sortOption) { _, _ in
-                applyFiltersAndSearch()
+                applyFilterPills()
             }
             .onAppear {
                 refreshBookmarksIfNeeded()
@@ -153,8 +168,44 @@ struct HomeView: View {
     
     // MARK: - Computed Properties
     
+    private var filterItems: [FilterPillsBar.FilterItem] {
+        // Get base filtered bookmarks (after applying tags, status, search)
+        var baseFiltered = allBookmarks
+        
+        // Apply status filter from filter sheet
+        if let status = selectedStatus {
+            baseFiltered = baseFiltered.filter { $0.status == status }
+        }
+        
+        // Apply tag filter from filter sheet
+        if !selectedTags.isEmpty {
+            baseFiltered = baseFiltered.filter { bookmark in
+                !Set(bookmark.tags).isDisjoint(with: selectedTags)
+            }
+        }
+        
+        // Apply search filter
+        let trimmedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedQuery.isEmpty {
+            baseFiltered = baseFiltered.filter { bookmark in
+                bookmark.title.localizedCaseInsensitiveContains(trimmedQuery) ||
+                bookmark.url?.localizedCaseInsensitiveContains(trimmedQuery) == true ||
+                bookmark.tags.contains { tag in
+                    tag.localizedCaseInsensitiveContains(trimmedQuery)
+                }
+            }
+        }
+        
+        let favoriteCount = baseFiltered.filter { $0.isFavorite }.count
+        
+        return [
+            .init(id: "all", title: "All", count: baseFiltered.count),
+            .init(id: "favorites", title: "Favorites", count: favoriteCount)
+        ]
+    }
+    
     private var hasActiveFilters: Bool {
-        selectedStatus != nil || !selectedTags.isEmpty || sortOption != .dateAddedDesc
+        selectedFilter != "all" || selectedStatus != nil || !selectedTags.isEmpty || sortOption != .dateAddedDesc
     }
     
     // MARK: - Views
@@ -251,8 +302,17 @@ struct HomeView: View {
                 confirmDeleteBookmark(bookmarkToDelete)
             }, onUpdate: { updatedBookmark in
                 updateBookmark(updatedBookmark)
+            }, onToggleFavorite: { bookmarkToToggle in
+                toggleFavorite(bookmarkToToggle)
             })
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                Button {
+                    toggleFavorite(bookmark)
+                } label: {
+                    Label(bookmark.isFavorite ? "Unfavorite" : "Favorite", systemImage: bookmark.isFavorite ? "star.slash.fill" : "star.fill")
+                }
+                .tint(.yellow)
+                
                 if bookmark.status != .read {
                     Button {
                         markAsRead(bookmark)
@@ -360,7 +420,7 @@ struct HomeView: View {
                 await MainActor.run {
                     self.allBookmarks = fetchedBookmarks
                     self.extractAvailableTags()
-                    self.applyFiltersAndSearch()
+                    self.applyFilterPills()
                     self.isLoading = false
                 }
             } catch {
@@ -392,7 +452,7 @@ struct HomeView: View {
             await MainActor.run {
                 self.allBookmarks = fetchedBookmarks
                 self.extractAvailableTags()
-                self.applyFiltersAndSearch()
+                self.applyFilterPills()
                 self.isRefreshing = false
             }
         } catch {
@@ -485,6 +545,48 @@ struct HomeView: View {
         var updatedBookmark = bookmark
         updatedBookmark.status = .archived
         updateBookmark(updatedBookmark)
+    }
+    
+    private func toggleFavorite(_ bookmark: BookmarkItem) {
+        // Optimistic UI update
+        bookmark.isFavorite.toggle()
+        
+        // Update in local arrays
+        if let index = bookmarks.firstIndex(where: { $0.id == bookmark.id }) {
+            bookmarks[index] = bookmark
+        }
+        if let index = allBookmarks.firstIndex(where: { $0.id == bookmark.id }) {
+            allBookmarks[index] = bookmark
+        }
+        
+        // Save to server in background
+        Task {
+            do {
+                let result = try await APIService.shared.updateBookmark(bookmark)
+                
+                await MainActor.run {
+                    // Update with server response
+                    if let index = self.bookmarks.firstIndex(where: { $0.id == bookmark.id }) {
+                        self.bookmarks[index] = result
+                    }
+                    if let index = self.allBookmarks.firstIndex(where: { $0.id == bookmark.id }) {
+                        self.allBookmarks[index] = result
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    // Revert optimistic update on error
+                    bookmark.isFavorite.toggle()
+                    if let index = self.bookmarks.firstIndex(where: { $0.id == bookmark.id }) {
+                        self.bookmarks[index] = bookmark
+                    }
+                    if let index = self.allBookmarks.firstIndex(where: { $0.id == bookmark.id }) {
+                        self.allBookmarks[index] = bookmark
+                    }
+                    self.errorMessage = "Failed to update favorite status"
+                }
+            }
+        }
     }
     
     private func addBookmark(url: String, tags: [String] = []) {
@@ -642,6 +744,47 @@ struct HomeView: View {
     
     // MARK: - Filter Methods
     
+    private func applyFilterPills() {
+        var filtered = allBookmarks
+        
+        // Apply status filter from filter sheet first
+        if let status = selectedStatus {
+            filtered = filtered.filter { $0.status == status }
+        }
+        
+        // Apply tag filter from filter sheet
+        if !selectedTags.isEmpty {
+            filtered = filtered.filter { bookmark in
+                !Set(bookmark.tags).isDisjoint(with: selectedTags)
+            }
+        }
+        
+        // Apply search filter
+        let trimmedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedQuery.isEmpty {
+            filtered = filtered.filter { bookmark in
+                bookmark.title.localizedCaseInsensitiveContains(trimmedQuery) ||
+                bookmark.url?.localizedCaseInsensitiveContains(trimmedQuery) == true ||
+                bookmark.tags.contains { tag in
+                    tag.localizedCaseInsensitiveContains(trimmedQuery)
+                }
+            }
+        }
+        
+        // Apply filter pill (favorites filter on top of everything else)
+        if selectedFilter == "favorites" {
+            filtered = filtered.filter { $0.isFavorite }
+        }
+        // "all" means no additional favorite filtering
+        
+        // Apply sorting
+        filtered = sortBookmarks(filtered, by: sortOption)
+        
+        bookmarks = filtered
+        
+        HapticManager.shared.selection()
+    }
+    
     private func applyFiltersAndSearch() {
         var filtered = allBookmarks
         
@@ -712,10 +855,12 @@ struct HomeView: View {
     }
     
     private func clearAllFilters() {
+        selectedFilter = "all"
         selectedStatus = nil
         selectedTags.removeAll()
         sortOption = .dateAddedDesc
         searchText = ""
+        applyFilterPills()
         HapticManager.shared.light()
     }
     
@@ -997,6 +1142,7 @@ struct BookmarkTileView: View {
     let bookmark: BookmarkItem
     let onDelete: (BookmarkItem) -> Void
     let onUpdate: (BookmarkItem) -> Void
+    let onToggleFavorite: (BookmarkItem) -> Void
     
     @State private var showingEditor = false
     @State private var ogImage: String? = nil
@@ -1102,6 +1248,9 @@ struct BookmarkTileView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color(.separator), lineWidth: 0.5)
         )
+        .overlay(alignment: .topTrailing) {
+            favoriteButton
+        }
         .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
         .contextMenu {
             contextMenuContent
@@ -1202,6 +1351,22 @@ struct BookmarkTileView: View {
         case .archived:
             return .gray
         }
+    }
+    
+    private var favoriteButton: some View {
+        Button(action: {
+            HapticManager.shared.light()
+            onToggleFavorite(bookmark)
+        }) {
+            Image(systemName: bookmark.isFavorite ? "star.fill" : "star")
+                .font(.system(size: 18))
+                .foregroundColor(bookmark.isFavorite ? .yellow : .white)
+                .padding(12)
+                .background(Color.black.opacity(0.3))
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .padding(8)
     }
     
     @ViewBuilder

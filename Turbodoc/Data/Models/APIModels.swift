@@ -7,12 +7,14 @@ struct APIBookmarkRequest: Codable {
     let url: String?
     let tags: String
     let status: String
+    let is_favorite: Bool
     
     init(from bookmarkItem: BookmarkItem) {
         self.title = bookmarkItem.title
         self.url = bookmarkItem.url
         self.tags = bookmarkItem.tags.joined(separator: "|")
         self.status = bookmarkItem.status.rawValue
+        self.is_favorite = bookmarkItem.isFavorite
     }
 }
 
@@ -27,9 +29,10 @@ struct APIBookmarkResponse: Codable {
     let created_at: String
     let updated_at: String
     let ogImage: String?
+    let is_favorite: Bool?
     
     enum CodingKeys: String, CodingKey {
-        case id, user_id, title, url, time_added, tags, status, created_at, updated_at, ogImage
+        case id, user_id, title, url, time_added, tags, status, created_at, updated_at, ogImage, is_favorite
     }
     
     var tagsList: [String] {
@@ -55,6 +58,7 @@ struct APIBookmarkResponse: Codable {
         bookmark.tags = tagsList
         bookmark.status = BookmarkItem.ItemStatus(rawValue: status) ?? .unread
         bookmark.ogImageURL = ogImage
+        bookmark.isFavorite = is_favorite ?? false
         
         return bookmark
     }
@@ -133,11 +137,13 @@ struct APINoteRequest: Codable {
     let title: String?
     let content: String
     let tags: String
+    let is_favorite: Bool
     
     init(from noteItem: NoteItem) {
         self.title = noteItem.title
         self.content = noteItem.content
         self.tags = noteItem.tags.joined(separator: "|")
+        self.is_favorite = noteItem.isFavorite
     }
 }
 
@@ -149,9 +155,10 @@ struct APINoteResponse: Codable {
     private let tags: TagsContainer?
     let created_at: String
     let updated_at: String
+    let is_favorite: Bool?
     
     enum CodingKeys: String, CodingKey {
-        case id, user_id, title, content, tags, created_at, updated_at
+        case id, user_id, title, content, tags, created_at, updated_at, is_favorite
     }
     
     var tagsList: [String] {
@@ -183,6 +190,8 @@ struct APINoteResponse: Codable {
         if let updatedDate = formatter.date(from: updated_at) {
             note.updatedAt = updatedDate
         }
+        
+        note.isFavorite = is_favorite ?? false
         
         return note
     }

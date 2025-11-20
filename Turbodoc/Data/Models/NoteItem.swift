@@ -8,16 +8,19 @@ class NoteItem {
     var content: String = ""
     var tags: [String] = []
     var userId: String = ""
+    var isFavorite: Bool = false
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
+    var syncedAt: Date?
     var version: Int = 1
     
-    init(title: String? = nil, content: String = "", tags: [String] = [], userId: String = "", version: Int = 1) {
+    init(title: String? = nil, content: String = "", tags: [String] = [], userId: String = "", isFavorite: Bool = false, version: Int = 1) {
         self.id = UUID()
         self.title = title
         self.content = content
         self.tags = tags
         self.userId = userId
+        self.isFavorite = isFavorite
         self.version = version
         self.createdAt = Date()
         self.updatedAt = Date()
