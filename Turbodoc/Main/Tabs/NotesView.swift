@@ -438,7 +438,7 @@ struct NotesView: View {
         // Apply sorting
         switch sortOrder {
         case "date_oldest":
-            filtered.sort { $0.createdAt > $1.createdAt } // Oldest first = ascending date
+            filtered.sort { $0.updatedAt > $1.updatedAt } // Oldest first = ascending date
         case "alpha_asc":
             filtered.sort { ($0.title ?? $0.displayTitle).localizedCaseInsensitiveCompare($1.title ?? $1.displayTitle) == .orderedAscending }
         case "alpha_desc":
@@ -446,7 +446,7 @@ struct NotesView: View {
         case "modified":
             filtered.sort { $0.updatedAt > $1.updatedAt }
         default: // "date_newest"
-            filtered.sort { $0.createdAt < $1.createdAt } // Newest first = descending date
+            filtered.sort { $0.updatedAt < $1.updatedAt } // Newest first = descending date
         }
         
         notes = filtered
