@@ -2,6 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Turbodoc needs access to your microphone to record voice notes.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Turbodoc uses speech recognition to transcribe your voice notes.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Turbodoc needs access to your camera to capture photos for notes.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Turbodoc needs access to your photo library to add photos to notes.</string>
+	<key>UIApplicationShortcutItems</key>
 	<array>
 		<dict>
 			<key>UIApplicationShortcutItemType</key>

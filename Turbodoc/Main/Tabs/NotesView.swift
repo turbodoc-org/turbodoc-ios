@@ -13,7 +13,10 @@ struct NotesView: View {
     @State private var showingDeleteConfirmation = false
     @State private var noteToDelete: NoteItem?
     @State private var showingAddNote = false
+    @State private var showingVoiceRecording = false
+    @State private var showingPhotoOCR = false
     @State private var noteToEdit: NoteItem?
+    @State private var isFABExpanded = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var lastRefreshTime = Date()
     @AppStorage("notesViewMode") private var viewMode: ViewMode = .grid
@@ -162,6 +165,30 @@ struct NotesView: View {
                     }
                 )
             }
+            .sheet(isPresented: $showingVoiceRecording) {
+                VoiceRecordingView(onSave: { transcribedText in
+                    guard let userId = authService.currentUser?.id else { return }
+                    let note = NoteItem(
+                        title: "🎤 Voice Note",
+                        content: transcribedText,
+                        tags: [],
+                        userId: userId
+                    )
+                    saveNoteUpdate(note)
+                })
+            }
+            .sheet(isPresented: $showingPhotoOCR) {
+                PhotoOCRView(onSave: { extractedText, _ in
+                    guard let userId = authService.currentUser?.id else { return }
+                    let note = NoteItem(
+                        title: "📷 Photo Note",
+                        content: extractedText,
+                        tags: [],
+                        userId: userId
+                    )
+                    saveNoteUpdate(note)
+                })
+            }
             .onChange(of: quickActionService.currentAction) { _, action in
                 if action == .newNote {
                     showingAddNote = true
@@ -187,22 +214,82 @@ struct NotesView: View {
                 )
             }
             .overlay(alignment: .bottomTrailing) {
-                Button(action: { showingAddNote = true }) {
-                    Image(systemName: "plus")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .frame(width: 60, height: 60)
-                        .background(
-                            Circle()
-                                .fill(Color.blue)
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                                )
-                        )
-                        .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
-                        .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
+                VStack(alignment: .trailing, spacing: 16) {
+                    // Expandable menu items
+                    if isFABExpanded {
+                        VStack(alignment: .trailing, spacing: 12) {
+                            // Voice recording button
+                            FABMenuItem(
+                                icon: "mic.fill",
+                                label: "Voice Note",
+                                color: .orange
+                            ) {
+                                HapticManager.shared.selection()
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    isFABExpanded = false
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                    showingVoiceRecording = true
+                                }
+                            }
+                            
+                            // Photo OCR button
+                            FABMenuItem(
+                                icon: "camera.fill",
+                                label: "Photo Note",
+                                color: .purple
+                            ) {
+                                HapticManager.shared.selection()
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    isFABExpanded = false
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                    showingPhotoOCR = true
+                                }
+                            }
+                            
+                            // Text note button
+                            FABMenuItem(
+                                icon: "text.alignleft",
+                                label: "Text Note",
+                                color: .blue
+                            ) {
+                                HapticManager.shared.selection()
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    isFABExpanded = false
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                    showingAddNote = true
+                                }
+                            }
+                        }
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                    
+                    // Main FAB button
+                    Button(action: {
+                        HapticManager.shared.selection()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            isFABExpanded.toggle()
+                        }
+                    }) {
+                        Image(systemName: isFABExpanded ? "xmark" : "plus")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .frame(width: 60, height: 60)
+                            .background(
+                                Circle()
+                                    .fill(Color.blue)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                    )
+                            )
+                            .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                            .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
+                            .rotationEffect(.degrees(isFABExpanded ? 45 : 0))
+                    }
                 }
                 .padding(.trailing, 24)
                 .padding(.bottom, 32)
@@ -351,7 +438,7 @@ struct NotesView: View {
         // Apply sorting
         switch sortOrder {
         case "date_oldest":
-            filtered.sort { $0.createdAt < $1.createdAt }
+            filtered.sort { $0.createdAt > $1.createdAt } // Oldest first = ascending date
         case "alpha_asc":
             filtered.sort { ($0.title ?? $0.displayTitle).localizedCaseInsensitiveCompare($1.title ?? $1.displayTitle) == .orderedAscending }
         case "alpha_desc":
@@ -359,7 +446,7 @@ struct NotesView: View {
         case "modified":
             filtered.sort { $0.updatedAt > $1.updatedAt }
         default: // "date_newest"
-            filtered.sort { $0.createdAt > $1.createdAt }
+            filtered.sort { $0.createdAt < $1.createdAt } // Newest first = descending date
         }
         
         notes = filtered
@@ -667,6 +754,46 @@ struct NotesView: View {
                     }
                     self.isSearching = false
                 }
+            }
+        }
+    }
+}
+
+// MARK: - FAB Menu Item Component
+
+struct FABMenuItem: View {
+    let icon: String
+    let label: String
+    let color: Color
+    let action: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(label)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.primary)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(Color(.secondarySystemBackground))
+                        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+                )
+            
+            Button(action: action) {
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 50, height: 50)
+                    .background(
+                        Circle()
+                            .fill(color)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            )
+                    )
+                    .shadow(color: color.opacity(0.3), radius: 6, x: 0, y: 3)
             }
         }
     }

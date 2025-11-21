@@ -179,28 +179,43 @@ struct EnhancedShareView: View {
     private func loadMetadata() {
         isLoadingMetadata = true
         
-        // Use shared title if available, otherwise extract domain
-        if let sharedTitle = sharedTitle, !sharedTitle.isEmpty {
+        // Set initial title from shared title if available
+        if let sharedTitle = sharedTitle, !sharedTitle.isEmpty, !sharedTitle.hasPrefix("http") {
             title = sharedTitle
         } else if let url = URL(string: sharedURL) {
+            // Use domain as temporary placeholder
             title = url.host?.replacingOccurrences(of: "www.", with: "") ?? "Untitled"
         }
         
-        // Attempt to fetch OG metadata (mainly for the image)
+        // Always attempt to fetch metadata from API for better title and image
         Task {
             do {
                 let metadata = try await fetchOGMetadata(url: sharedURL)
                 await MainActor.run {
-                    // Only update title if user hasn't manually edited it and we don't have a shared title
-                    if !hasUserEditedTitle, sharedTitle == nil, let fetchedTitle = metadata.title, !fetchedTitle.isEmpty {
-                        self.title = fetchedTitle
+                    // Update title if we got a better one from the API
+                    if let fetchedTitle = metadata.title, !fetchedTitle.isEmpty {
+                        // Only update if user hasn't edited OR if current title is just a URL/domain
+                        if !hasUserEditedTitle || self.title.contains("://") || self.title == (URL(string: sharedURL)?.host?.replacingOccurrences(of: "www.", with: "") ?? "") {
+                            self.title = fetchedTitle
+                        }
                     }
                     self.ogImageURL = metadata.ogImage
                     self.isLoadingMetadata = false
                 }
             } catch {
-                await MainActor.run {
-                    self.isLoadingMetadata = false
+                // If API fails, try fetching HTML directly
+                do {
+                    let htmlTitle = try await fetchTitleFromHTML(url: sharedURL)
+                    await MainActor.run {
+                        if !hasUserEditedTitle, let htmlTitle = htmlTitle, !htmlTitle.isEmpty {
+                            self.title = htmlTitle
+                        }
+                        self.isLoadingMetadata = false
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.isLoadingMetadata = false
+                    }
                 }
             }
         }
@@ -278,6 +293,7 @@ struct EnhancedShareView: View {
         
         var request = URLRequest(url: apiURL)
         request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
         
         let (data, _) = try await URLSession.shared.data(for: request)
         
@@ -288,6 +304,52 @@ struct EnhancedShareView: View {
         
         let response = try JSONDecoder().decode(OGResponse.self, from: data)
         return (response.title, response.ogImage)
+    }
+    
+    private func fetchTitleFromHTML(url: String) async throws -> String? {
+        guard let pageURL = URL(string: url) else {
+            return nil
+        }
+        
+        var request = URLRequest(url: pageURL)
+        request.timeoutInterval = 10
+        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        
+        guard let html = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        
+        // Try to extract title from <title> tag
+        if let titleRange = html.range(of: "<title[^>]*>", options: .regularExpression),
+           let endTitleRange = html.range(of: "</title>", options: .caseInsensitive) {
+            let startIndex = html.index(after: titleRange.upperBound)
+            if startIndex < endTitleRange.lowerBound {
+                let title = String(html[startIndex..<endTitleRange.lowerBound])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: "&amp;", with: "&")
+                    .replacingOccurrences(of: "&quot;", with: "\"")
+                    .replacingOccurrences(of: "&apos;", with: "'")
+                    .replacingOccurrences(of: "&lt;", with: "<")
+                    .replacingOccurrences(of: "&gt;", with: ">")
+                return title.isEmpty ? nil : title
+            }
+        }
+        
+        // Try og:title as fallback
+        if let ogTitleRange = html.range(of: "<meta[^>]*property=\"og:title\"[^>]*content=\"([^\"]*)\"", options: .regularExpression) {
+            let ogTitleMatch = String(html[ogTitleRange])
+            if let contentRange = ogTitleMatch.range(of: "content=\"([^\"]*)\"", options: .regularExpression) {
+                let content = String(ogTitleMatch[contentRange])
+                    .replacingOccurrences(of: "content=\"", with: "")
+                    .replacingOccurrences(of: "\"", with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return content.isEmpty ? nil : content
+            }
+        }
+        
+        return nil
     }
     
     private func getAuthToken() -> String? {

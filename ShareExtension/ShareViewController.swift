@@ -28,8 +28,28 @@ class ShareViewController: UIViewController {
             return
         }
         
-        // Extract the page title from the extension item
-        let pageTitle = extensionItem.attributedContentText?.string ?? extensionItem.attributedTitle?.string
+        // Try multiple sources for the page title
+        var pageTitle: String?
+        
+        // 1. Try attributed content text (Safari often provides this)
+        if let contentText = extensionItem.attributedContentText?.string, !contentText.isEmpty {
+            pageTitle = contentText
+        }
+        
+        // 2. Try attributed title
+        if pageTitle == nil || pageTitle?.isEmpty == true {
+            if let titleText = extensionItem.attributedTitle?.string, !titleText.isEmpty {
+                pageTitle = titleText
+            }
+        }
+        
+        // 3. Try userInfo dictionary (some browsers use this)
+        if pageTitle == nil || pageTitle?.isEmpty == true {
+            if let userInfo = extensionItem.userInfo as? [String: Any] {
+                pageTitle = userInfo[NSExtensionItemAttributedTitleKey] as? String
+                ?? userInfo["NSExtensionItemAttributedContentTextKey"] as? String
+            }
+        }
         
         if itemProvider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
             itemProvider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { [weak self] (item, error) in
