@@ -1359,9 +1359,9 @@ struct BookmarkTileView: View {
             onToggleFavorite(bookmark)
         }) {
             Image(systemName: bookmark.isFavorite ? "star.fill" : "star")
-                .font(.system(size: 18))
+                .font(.system(size: 12))
                 .foregroundColor(bookmark.isFavorite ? .yellow : .white)
-                .padding(12)
+                .padding(8)
                 .background(Color.black.opacity(0.3))
                 .clipShape(Circle())
         }

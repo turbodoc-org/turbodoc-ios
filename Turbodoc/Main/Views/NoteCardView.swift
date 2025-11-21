@@ -40,9 +40,9 @@ struct NoteCardView: View {
             onToggleFavorite(note)
         }) {
             Image(systemName: note.isFavorite ? "star.fill" : "star")
-                .font(.system(size: 18))
+                .font(.system(size: 12))
                 .foregroundColor(note.isFavorite ? .yellow : .gray)
-                .padding(12)
+                .padding(8)
         }
         .buttonStyle(.plain)
     }
