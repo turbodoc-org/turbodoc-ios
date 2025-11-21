@@ -19,6 +19,9 @@ struct HomeView: View {
     @AppStorage("viewMode") private var viewMode: ViewMode = .grid
     @AppStorage("bookmarksFilter") private var selectedFilter: String = "all"
     
+    @State private var isConnected = NetworkMonitor.shared.isConnected
+    @State private var pendingOperationsCount = SyncQueueManager.shared.pendingOperationsCount
+    
     // Filter states
     @State private var selectedStatus: BookmarkItem.ItemStatus? = nil
     @State private var selectedTags: Set<String> = []
@@ -39,6 +42,17 @@ struct HomeView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
+                // Offline banner
+                OfflineBanner(
+                    isConnected: isConnected,
+                    pendingOperations: pendingOperationsCount,
+                    onTapSync: {
+                        Task {
+                            await SyncQueueManager.shared.processPendingOperations()
+                        }
+                    }
+                )
+                
                 if isLoading {
                     loadingView
                 } else {
@@ -149,6 +163,15 @@ struct HomeView: View {
                     // Focus search field - this will be handled by searchable modifier
                     HapticManager.shared.light()
                 }
+            }
+            .onReceive(NetworkMonitor.shared.connectionStatusChanged) { connected in
+                Task { @MainActor in
+                    isConnected = connected
+                }
+            }
+            .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+                isConnected = NetworkMonitor.shared.isConnected
+                pendingOperationsCount = SyncQueueManager.shared.pendingOperationsCount
             }
             .overlay(alignment: .bottomTrailing) {
                 Button(action: { showingAddBookmark = true }) {
@@ -425,7 +448,10 @@ struct HomeView: View {
                 }
             } catch {
                 await MainActor.run {
-                    self.errorMessage = "Failed to load bookmarks: \(error.localizedDescription)"
+                    // Only show error if we don't have any bookmarks (no cache)
+                    if self.allBookmarks.isEmpty {
+                        self.errorMessage = "Failed to load bookmarks: \(error.localizedDescription)"
+                    }
                     self.isLoading = false
                 }
             }
@@ -457,7 +483,10 @@ struct HomeView: View {
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = "Failed to refresh bookmarks: \(error.localizedDescription)"
+                // Only show error if we have no cached bookmarks
+                if self.allBookmarks.isEmpty {
+                    self.errorMessage = "Failed to refresh bookmarks: \(error.localizedDescription)"
+                }
                 self.isRefreshing = false
             }
         }
@@ -667,7 +696,6 @@ struct HomeView: View {
             } catch {
                 attempts += 1
                 if attempts > retries {
-                    print("Failed to fetch metadata after \(retries) retries: \(error.localizedDescription)")
                     return nil
                 }
                 // Wait before retry (exponential backoff)

@@ -12,6 +12,7 @@ class BookmarkItem {
     var status: ItemStatus
     var isFavorite: Bool
     var userId: String
+    var version: Int = 1
     var localFilePath: String?
     var textContent: String?
     var thumbnailPath: String?

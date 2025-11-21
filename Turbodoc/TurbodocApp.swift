@@ -20,16 +20,17 @@ struct TurbodocApp: App {
             User.self,
             BookmarkItem.self,
             NoteItem.self,
+            SyncOperation.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
+        
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
             fatalError("Could not create ModelContainer: \(error)")
         }
     }()
-
+    
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -40,18 +41,24 @@ struct TurbodocApp: App {
                     APIService.shared.configure(authService: authService)
                     PendingBookmarksService.shared.configure(authService: authService)
                     
-                    // If user is already authenticated, process pending bookmarks
+                    // Initialize offline support
+                    NetworkMonitor.shared.startMonitoring()
+                    SyncQueueManager.shared.configure(modelContext: sharedModelContainer.mainContext, authService: authService)
+                    
+                    // If user is already authenticated, process pending bookmarks and sync
                     if authService.isAuthenticated {
                         Task {
                             await PendingBookmarksService.shared.processPendingBookmarks()
+                            await SyncQueueManager.shared.processPendingOperations()
                         }
                     }
                 }
                 .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
                     if isAuthenticated {
-                        // Process pending bookmarks when user becomes authenticated
+                        // Process pending bookmarks and sync when user becomes authenticated
                         Task {
                             await PendingBookmarksService.shared.processPendingBookmarks()
+                            await SyncQueueManager.shared.processPendingOperations()
                         }
                     }
                 }

@@ -20,6 +20,9 @@ struct NotesView: View {
     @AppStorage("notesFilterSelection") private var selectedFilter: String = "all"
     @AppStorage("notesSortOrder") private var sortOrder: String = "date_newest"
     
+    @State private var isConnected = NetworkMonitor.shared.isConnected
+    @State private var pendingOperationsCount = SyncQueueManager.shared.pendingOperationsCount
+    
     // Grid layout - 2 columns with improved spacing
     private let columns = [
         GridItem(.flexible(), spacing: 16),
@@ -42,6 +45,17 @@ struct NotesView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // Offline banner
+                OfflineBanner(
+                    isConnected: isConnected,
+                    pendingOperations: pendingOperationsCount,
+                    onTapSync: {
+                        Task {
+                            await SyncQueueManager.shared.processPendingOperations()
+                        }
+                    }
+                )
+                
                 if isLoading {
                     loadingView
                 } else {
@@ -100,6 +114,15 @@ struct NotesView: View {
             }
             .onAppear {
                 refreshNotesIfNeeded()
+            }
+            .onReceive(NetworkMonitor.shared.connectionStatusChanged) { connected in
+                Task { @MainActor in
+                    isConnected = connected
+                }
+            }
+            .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+                isConnected = NetworkMonitor.shared.isConnected
+                pendingOperationsCount = SyncQueueManager.shared.pendingOperationsCount
             }
             .onChange(of: scenePhase) {
                 if scenePhase == .active && authService.isAuthenticated {
@@ -361,14 +384,18 @@ struct NotesView: View {
                 let fetchedNotes = try await APIService.shared.fetchNotes(userId: user.id)
                 
                 await MainActor.run {
-                    self.allNotes = fetchedNotes
-                    self.notes = fetchedNotes
+                    // Merge fetched notes with local pending changes
+                    self.allNotes = self.mergeFetchedNotesWithLocalEdits(fetchedNotes)
+                    self.notes = self.allNotes
                     self.applyFilter()
                     self.isLoading = false
                 }
             } catch {
                 await MainActor.run {
-                    self.errorMessage = "Failed to load notes: \(error.localizedDescription)"
+                    // Only show error if we don't have any notes (no cache)
+                    if self.allNotes.isEmpty {
+                        self.errorMessage = "Failed to load notes: \(error.localizedDescription)"
+                    }
                     self.isLoading = false
                 }
             }
@@ -393,14 +420,18 @@ struct NotesView: View {
             let fetchedNotes = try await APIService.shared.fetchNotes(userId: user.id)
             
             await MainActor.run {
-                self.allNotes = fetchedNotes
-                self.notes = fetchedNotes
+                // Merge fetched notes with local pending changes
+                self.allNotes = self.mergeFetchedNotesWithLocalEdits(fetchedNotes)
+                self.notes = self.allNotes
                 self.applyFilter()
                 self.isRefreshing = false
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = "Failed to refresh notes: \(error.localizedDescription)"
+                // Only show error if we have no cached notes
+                if self.allNotes.isEmpty {
+                    self.errorMessage = "Failed to refresh notes: \(error.localizedDescription)"
+                }
                 self.isRefreshing = false
             }
         }
@@ -471,12 +502,65 @@ struct NotesView: View {
         }
     }
     
+    private func mergeFetchedNotesWithLocalEdits(_ fetchedNotes: [NoteItem]) -> [NoteItem] {
+        // Get IDs of notes with pending changes
+        let pendingNoteIds = SyncQueueManager.shared.getPendingNoteIds()
+        
+        // If no pending changes, return fetched notes as-is
+        guard !pendingNoteIds.isEmpty else {
+            return fetchedNotes
+        }
+        
+        var mergedNotes: [NoteItem] = []
+        
+        // For each fetched note, check if it has pending changes
+        for fetchedNote in fetchedNotes {
+            if pendingNoteIds.contains(fetchedNote.id) {
+                // This note has pending changes - use the local version from allNotes if available
+                if let localNote = allNotes.first(where: { $0.id == fetchedNote.id }) {
+                    mergedNotes.append(localNote)
+                } else if let payload = SyncQueueManager.shared.getPendingNotePayload(for: fetchedNote.id) {
+                    // Reconstruct from payload if not in allNotes
+                    let note = NoteItem(
+                        title: payload.title ?? "",
+                        content: payload.content ?? "",
+                        tags: payload.tags ?? [],
+                        userId: authService.currentUser?.id ?? ""
+                    )
+                    note.id = fetchedNote.id
+                    note.isFavorite = payload.isFavorite ?? false
+                    note.version = payload.version ?? 1
+                    mergedNotes.append(note)
+                } else {
+                    mergedNotes.append(fetchedNote)
+                }
+            } else {
+                // No pending changes - use fetched version
+                mergedNotes.append(fetchedNote)
+            }
+        }
+        
+        // Add any new notes that are pending creation (not in fetched notes)
+        for noteId in pendingNoteIds {
+            if !mergedNotes.contains(where: { $0.id == noteId }) {
+                // This is a new note being created
+                if let localNote = allNotes.first(where: { $0.id == noteId }) {
+                    mergedNotes.insert(localNote, at: 0)
+                }
+            }
+        }
+        
+        return mergedNotes
+    }
+    
     private func saveNoteUpdate(_ note: NoteItem) {
         let isExistingNote = allNotes.contains(where: { $0.id == note.id })
+        let operationType = isExistingNote ? "update" : "create"
+        
         // Update UI immediately (optimistic update)
         if !isExistingNote {
             self.allNotes.insert(note, at: 0)
-            self.notes.insert(note, at: 0)
+            self.applyFilter()
         } else {
             if let index = self.notes.firstIndex(where: { $0.id == note.id }) {
                 self.notes[index] = note
@@ -486,33 +570,38 @@ struct NotesView: View {
             }
         }
         
+        // Update cache will happen on next successful API fetch
+        // For now, the UI is already updated optimistically above
+        
         // Save to server in background
         Task {
-            do {
-                let savedNote: NoteItem
-                
-                // Use UI state to determine if this is a new or existing note
-                if !isExistingNote {
-                    // New note - create on server
-                    savedNote = try await APIService.shared.saveNote(note)
-                } else {
-                    // Existing note - update on server
-                    savedNote = try await APIService.shared.updateNote(note)
-                }
-                
-                await MainActor.run {
-                    // Update with server response
-                    if let index = self.notes.firstIndex(where: { $0.id == note.id }) {
-                        self.notes[index] = savedNote
+            if NetworkMonitor.shared.isConnected {
+                // Online - try to save immediately
+                do {
+                    let savedNote: NoteItem
+                    
+                    if !isExistingNote {
+                        savedNote = try await APIService.shared.saveNote(note)
+                    } else {
+                        savedNote = try await APIService.shared.updateNote(note)
                     }
-                    if let index = self.allNotes.firstIndex(where: { $0.id == note.id }) {
-                        self.allNotes[index] = savedNote
+                    
+                    await MainActor.run {
+                        // Update with server response
+                        if let index = self.notes.firstIndex(where: { $0.id == note.id }) {
+                            self.notes[index] = savedNote
+                        }
+                        if let index = self.allNotes.firstIndex(where: { $0.id == note.id }) {
+                            self.allNotes[index] = savedNote
+                        }
                     }
+                } catch {
+                    // Failed while online - queue for retry
+                    SyncQueueManager.shared.queueNoteOperation(type: operationType, note: note)
                 }
-            } catch {
-                await MainActor.run {
-                    self.errorMessage = "Failed to save note: \(error.localizedDescription)"
-                }
+            } else {
+                // Offline - queue operation
+                SyncQueueManager.shared.queueNoteOperation(type: operationType, note: note)
             }
         }
     }

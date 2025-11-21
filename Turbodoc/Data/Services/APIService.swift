@@ -4,6 +4,8 @@ class APIService {
     static let shared = APIService()
     
     private let networkService = NetworkService.shared
+    private let cacheManager = CacheManager.shared
+    private let networkMonitor = NetworkMonitor.shared
     
     private init() {}
     
@@ -16,16 +18,35 @@ class APIService {
     
     func fetchBookmarks(userId: String) async throws -> [BookmarkItem] {
         let endpoint = APIConfig.Endpoints.bookmarks
+        let cacheKey = "bookmarks_\(userId)"
         
-        do {
-            let response = try await networkService.performRequest(
-                endpoint: endpoint,
-                method: .GET,
-                responseType: APIBookmarkListResponse.self
-            )
-            
-            return response.data.map { $0.toBookmarkItem() }
-        } catch {
+        // Try network first if connected
+        if networkMonitor.isConnected {
+            do {
+                let response = try await networkService.performRequest(
+                    endpoint: endpoint,
+                    method: .GET,
+                    responseType: APIBookmarkListResponse.self
+                )
+                
+                let bookmarks = response.data.map { $0.toBookmarkItem() }
+                
+                // Cache the successful response
+                cacheManager.cache(item: response, forKey: cacheKey)
+                
+                return bookmarks
+            } catch {
+                // Network failed, try cache
+                if let cachedResponse: APIBookmarkListResponse = cacheManager.retrieve(forKey: cacheKey, as: APIBookmarkListResponse.self) {
+                    return cachedResponse.data.map { $0.toBookmarkItem() }
+                }
+                throw APIError.networkError
+            }
+        } else {
+            // Offline - use cache
+            if let cachedResponse: APIBookmarkListResponse = cacheManager.retrieve(forKey: cacheKey, as: APIBookmarkListResponse.self) {
+                return cachedResponse.data.map { $0.toBookmarkItem() }
+            }
             throw APIError.networkError
         }
     }
@@ -168,16 +189,35 @@ class APIService {
     
     func fetchNotes(userId: String) async throws -> [NoteItem] {
         let endpoint = APIConfig.Endpoints.notes
+        let cacheKey = "notes_\(userId)"
         
-        do {
-            let response = try await networkService.performRequest(
-                endpoint: endpoint,
-                method: .GET,
-                responseType: APINoteListResponse.self
-            )
-            
-            return response.data.map { $0.toNoteItem() }
-        } catch {
+        // Try network first if connected
+        if networkMonitor.isConnected {
+            do {
+                let response = try await networkService.performRequest(
+                    endpoint: endpoint,
+                    method: .GET,
+                    responseType: APINoteListResponse.self
+                )
+                
+                let notes = response.data.map { $0.toNoteItem() }
+                
+                // Cache the successful response
+                cacheManager.cache(item: response, forKey: cacheKey)
+                
+                return notes
+            } catch {
+                // Network failed, try cache
+                if let cachedResponse: APINoteListResponse = cacheManager.retrieve(forKey: cacheKey, as: APINoteListResponse.self) {
+                    return cachedResponse.data.map { $0.toNoteItem() }
+                }
+                throw APIError.networkError
+            }
+        } else {
+            // Offline - use cache
+            if let cachedResponse: APINoteListResponse = cacheManager.retrieve(forKey: cacheKey, as: APINoteListResponse.self) {
+                return cachedResponse.data.map { $0.toNoteItem() }
+            }
             throw APIError.networkError
         }
     }
