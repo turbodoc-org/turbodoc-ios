@@ -268,7 +268,7 @@ class MarkdownTextStorage: NSTextStorage {
     
     private func applyLists(in range: NSRange, nsString: NSString) {
         // Unordered lists
-        let unorderedListPattern = "^([\\s]*)([-*+])\\s+(.*)$"
+        let unorderedListPattern = "^([\\s]*)([-+])\\s+(.*)$"
         if let regex = try? NSRegularExpression(pattern: unorderedListPattern, options: .anchorsMatchLines) {
             regex.enumerateMatches(in: nsString as String, options: [], range: range) { match, _, _ in
                 guard let match = match else { return }
