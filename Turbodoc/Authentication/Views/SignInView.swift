@@ -11,8 +11,6 @@ struct SignInView: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: Constants.Spacing.xl) {
-                    Spacer(minLength: Constants.Spacing.xxl)
-                    
                     // Logo/Title
                     VStack(spacing: Constants.Spacing.md) {
                         Image("Logo")
@@ -30,7 +28,7 @@ struct SignInView: View {
                             .font(.system(size: Constants.Typography.FontSizes.base))
                             .foregroundColor(Constants.Colors.mutedForeground)
                     }
-                    .padding(.bottom, Constants.Spacing.lg)
+                    .padding(.bottom, Constants.Spacing.md)
                     
                     // Sign In Card
                     CardView {
@@ -42,7 +40,7 @@ struct SignInView: View {
                         CardContent {
                             VStack(spacing: Constants.Spacing.lg) {
                                 FormField(label: "Email") {
-                                    TextField("mail@example.com", text: $email)
+                                    TextField("", text: $email)
                                         .keyboardType(.emailAddress)
                                         .autocapitalization(.none)
                                         .primaryTextFieldStyle()
@@ -103,8 +101,6 @@ struct SignInView: View {
                         }
                     }
                     .padding(.horizontal, Constants.Spacing.md)
-                    
-                    Spacer(minLength: Constants.Spacing.xl)
                 }
             }
             .background(Constants.Colors.background)
