@@ -43,13 +43,17 @@ struct EditNoteView: View {
             Divider()
             
             // Markdown editor
-            MarkdownEditor(text: $note.content)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 16)
-                .onChange(of: note.content) {
-                    scheduleAutoSave()
-                }
+            MarkdownEditor(
+                text: $note.content,
+                disableMarkdown: containsEmojis(note.content)
+            )
+            .id("markdown-editor-\(note.id)-\(containsEmojis(note.content))")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
+            .onChange(of: note.content) {
+                scheduleAutoSave()
+            }
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -109,5 +113,21 @@ struct EditNoteView: View {
     private func finishEditing() {
         saveIfNeeded()
         onFinish()
+    }
+    
+    // MARK: - Emoji Detection
+    
+    /// Checks if the text contains emojis that could cause crashes with markdown rendering
+    private func containsEmojis(_ text: String) -> Bool {
+        for scalar in text.unicodeScalars {
+            // Check for actual emoji characters that cause NSTextStorage issues
+            if scalar.properties.isEmoji && scalar.properties.isEmojiPresentation {
+                return true
+            }
+            if scalar.properties.isEmojiModifier || scalar.properties.isEmojiModifierBase {
+                return true
+            }
+        }
+        return false
     }
 }
