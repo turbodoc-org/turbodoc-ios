@@ -277,7 +277,7 @@ struct NotesView: View {
                             .font(.title2)
                             .fontWeight(.semibold)
                             .foregroundColor(.white)
-                            .frame(width: 60, height: 60)
+                            .frame(width: 56, height: 56)
                             .background(
                                 Circle()
                                     .fill(Color.blue)
@@ -312,8 +312,6 @@ struct NotesView: View {
     
     private var emptyStateView: some View {
         VStack(spacing: 30) {
-            Spacer()
-            
             Image(systemName: "note.text")
                 .font(.system(size: 80))
                 .foregroundColor(.blue)
@@ -336,9 +334,8 @@ struct NotesView: View {
                         .padding(.horizontal)
                 }
             }
-            
-            Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     private var notesGrid: some View {

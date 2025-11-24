@@ -243,14 +243,16 @@ struct HomeView: View {
         Button(action: { showingAddBookmark = true }) {
             Image(systemName: "plus")
                 .font(.title2)
+                .fontWeight(.semibold)
                 .foregroundColor(.white)
                 .frame(width: 56, height: 56)
                 .background(Color.blue)
                 .clipShape(Circle())
-                .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
         }
-        .padding(.trailing, 20)
-        .padding(.bottom, 20)
+        .padding(.trailing, 24)
+        .padding(.bottom, 32)
     }
     
     private func handleQuickAction(_ action: QuickAction?) {
@@ -324,8 +326,6 @@ struct HomeView: View {
     
     private var emptyStateView: some View {
         VStack(spacing: 30) {
-            Spacer()
-            
             Image(systemName: hasActiveFilters || !searchText.isEmpty ? "magnifyingglass" : "bookmark")
                 .font(.system(size: 80))
                 .foregroundColor(.blue)
@@ -364,9 +364,8 @@ struct HomeView: View {
                     .padding(.top, 8)
                 }
             }
-            
-            Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     private var emptyStateTitle: String {
