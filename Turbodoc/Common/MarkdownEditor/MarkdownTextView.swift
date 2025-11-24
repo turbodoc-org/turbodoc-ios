@@ -52,6 +52,44 @@ class MarkdownTextView: UITextView {
 // MARK: - UITextViewDelegate
 extension MarkdownTextView: UITextViewDelegate {
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        // Handle header deletion when backspacing on empty header (e.g., "# " → "")
+        if text.isEmpty && range.length == 1 {
+            let currentText = textView.text as NSString
+            let lineRange = currentText.lineRange(for: range)
+            let lineText = currentText.substring(with: lineRange)
+            
+            // Check if we're deleting on a line that's just header markers and space (e.g., "# ", "## ", etc.)
+            let headerPattern = "^(#{1,6})\\s*$"
+            if let regex = try? NSRegularExpression(pattern: headerPattern, options: []),
+               regex.firstMatch(in: lineText, options: [], range: NSRange(location: 0, length: lineText.count)) != nil {
+                
+                // Check if we're deleting the space after the # symbols
+                // The deletion position should be right after the last space
+                let deletePosition = range.location
+                let lineStart = lineRange.location
+                let relativePosition = deletePosition - lineStart
+                
+                // Find where the space(s) after # symbols are
+                let trimmedLine = lineText.trimmingCharacters(in: .newlines)
+                if relativePosition > 0 && relativePosition <= trimmedLine.count {
+                    // We're deleting the space or within the header marker area
+                    // Remove the entire header markers (keeping the newline if it exists)
+                    let hasNewline = lineText.hasSuffix("\n")
+                    let replacement = hasNewline ? "\n" : ""
+                    
+                    // Use textStorage to properly update the text
+                    textView.textStorage.replaceCharacters(in: lineRange, with: replacement)
+                    
+                    // Position cursor at the start of the (now empty) line
+                    textView.selectedRange = NSRange(location: lineRange.location, length: 0)
+                    
+                    // Notify delegate
+                    externalDelegate?.textViewDidChange?(textView)
+                    return false
+                }
+            }
+        }
+        
         // Handle list continuation on Enter key
         if text == "\n" {
             let currentText = textView.text as NSString
