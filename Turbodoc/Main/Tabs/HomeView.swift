@@ -41,63 +41,14 @@ struct HomeView: View {
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                // Offline banner
-                OfflineBanner(
-                    isConnected: isConnected,
-                    pendingOperations: pendingOperationsCount,
-                    onTapSync: {
-                        Task {
-                            await SyncQueueManager.shared.processPendingOperations()
-                        }
-                    }
-                )
-                
-                if isLoading {
-                    loadingView
-                } else {
-                    // Always show filter pills when we have bookmarks
-                    if !allBookmarks.isEmpty {
-                        FilterPillsBar(
-                            filters: filterItems,
-                            selectedFilter: selectedFilter,
-                            onSelect: { filterId in
-                                selectedFilter = filterId
-                                applyFilterPills()
-                            }
-                        )
-                    }
-                    
-                    if bookmarks.isEmpty {
-                        emptyStateView
-                    } else {
-                        bookmarksList
-                    }
-                }
-            }
+            contentWithModifiers
+        }
+    }
+    
+    private var contentWithModifiers: some View {
+        mainContent
             .navigationTitle("Bookmarks")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: {
-                        HapticManager.shared.selection()
-                        showingFilters.toggle()
-                    }) {
-                        Image(systemName: hasActiveFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                            .imageScale(.large)
-                            .foregroundColor(hasActiveFilters ? .blue : .primary)
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        HapticManager.shared.selection()
-                        viewMode = viewMode == .grid ? .list : .grid
-                    }) {
-                        Image(systemName: viewMode == .grid ? "list.bullet" : "square.grid.2x2")
-                            .imageScale(.large)
-                    }
-                }
-            }
+            .toolbar { toolbarContent }
             .searchable(text: $searchText, prompt: "Search bookmarks...")
             .onChange(of: searchText) {
                 applyFilterPills()
@@ -115,31 +66,18 @@ struct HomeView: View {
                 refreshBookmarksIfNeeded()
             }
             .onChange(of: scenePhase) {
-                if scenePhase == .active && authService.isAuthenticated {
-                    refreshBookmarksIfNeeded()
-                }
+                handleScenePhaseChange()
             }
-            .onChange(of: authService.isAuthenticated) {
-                if authService.isAuthenticated {
-                    loadBookmarks()
-                }
+            .onChange(of: authService.authenticationStatus) {
+                handleAuthStatusChange()
             }
             .onChange(of: authService.currentUser) {
-                if authService.currentUser != nil {
-                    loadBookmarks()
-                }
+                handleUserChange()
             }
             .alert("Delete Bookmark", isPresented: $showingDeleteConfirmation) {
-                Button("Cancel", role: .cancel) { }
-                Button("Delete", role: .destructive) {
-                    if let bookmark = bookmarkToDelete {
-                        deleteBookmark(bookmark)
-                    }
-                }
+                deleteAlertButtons
             } message: {
-                if let bookmark = bookmarkToDelete {
-                    Text("Are you sure you want to delete \"\(bookmark.title)\"? This action cannot be undone.")
-                }
+                deleteAlertMessage
             }
             .sheet(isPresented: $showingAddBookmark) {
                 AddBookmarkView(onSave: { url, tags in
@@ -147,22 +85,10 @@ struct HomeView: View {
                 })
             }
             .sheet(isPresented: $showingFilters) {
-                FilterView(
-                    selectedStatus: $selectedStatus,
-                    selectedTags: $selectedTags,
-                    sortOption: $sortOption,
-                    availableTags: availableTags,
-                    onClearAll: clearAllFilters
-                )
+                filterSheet
             }
             .onChange(of: quickActionService.currentAction) { _, action in
-                if action == .newBookmark {
-                    showingAddBookmark = true
-                    HapticManager.shared.light()
-                } else if action == .search {
-                    // Focus search field - this will be handled by searchable modifier
-                    HapticManager.shared.light()
-                }
+                handleQuickAction(action)
             }
             .onReceive(NetworkMonitor.shared.connectionStatusChanged) { connected in
                 Task { @MainActor in
@@ -170,22 +96,169 @@ struct HomeView: View {
                 }
             }
             .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-                isConnected = NetworkMonitor.shared.isConnected
-                pendingOperationsCount = SyncQueueManager.shared.pendingOperationsCount
+                handleTimerTick()
             }
             .overlay(alignment: .bottomTrailing) {
-                Button(action: { showingAddBookmark = true }) {
-                    Image(systemName: "plus")
-                        .font(.title2)
-                        .foregroundColor(.white)
-                        .frame(width: 56, height: 56)
-                        .background(Color.blue)
-                        .clipShape(Circle())
-                        .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
-                }
-                .padding(.trailing, 20)
-                .padding(.bottom, 20)
+                addBookmarkButton
             }
+    }
+    
+    private var filterSheet: some View {
+        FilterView(
+            selectedStatus: $selectedStatus,
+            selectedTags: $selectedTags,
+            sortOption: $sortOption,
+            availableTags: availableTags,
+            onClearAll: clearAllFilters
+        )
+    }
+    
+    private func handleScenePhaseChange() {
+        if scenePhase == .active && authService.authenticationStatus == .authenticated {
+            refreshBookmarksIfNeeded()
+        }
+    }
+    
+    private func handleAuthStatusChange() {
+        if authService.authenticationStatus == .authenticated {
+            loadBookmarks()
+        }
+    }
+    
+    private func handleUserChange() {
+        if authService.currentUser != nil {
+            loadBookmarks()
+        }
+    }
+    
+    private func handleTimerTick() {
+        isConnected = NetworkMonitor.shared.isConnected
+        pendingOperationsCount = SyncQueueManager.shared.pendingOperationsCount
+    }
+    
+    // MARK: - Subviews
+    
+    private var mainContent: some View {
+        VStack(spacing: 0) {
+            offlineBanner
+            
+            if isLoading {
+                loadingView
+            } else {
+                contentArea
+            }
+        }
+    }
+    
+    private var offlineBanner: some View {
+        OfflineBanner(
+            isConnected: isConnected,
+            pendingOperations: pendingOperationsCount,
+            onTapSync: {
+                Task {
+                    await SyncQueueManager.shared.processPendingOperations()
+                }
+            }
+        )
+    }
+    
+    private var contentArea: some View {
+        Group {
+            if !allBookmarks.isEmpty {
+                VStack(spacing: 0) {
+                    filterPillsBar
+                    contentList
+                }
+            } else if bookmarks.isEmpty {
+                emptyStateView
+            } else {
+                bookmarksList
+            }
+        }
+    }
+    
+    private var filterPillsBar: some View {
+        FilterPillsBar(
+            filters: filterItems,
+            selectedFilter: selectedFilter,
+            onSelect: { filterId in
+                selectedFilter = filterId
+                applyFilterPills()
+            }
+        )
+    }
+    
+    private var contentList: some View {
+        Group {
+            if bookmarks.isEmpty {
+                emptyStateView
+            } else {
+                bookmarksList
+            }
+        }
+    }
+    
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button(action: {
+                HapticManager.shared.selection()
+                showingFilters.toggle()
+            }) {
+                Image(systemName: hasActiveFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    .imageScale(.large)
+                    .foregroundColor(hasActiveFilters ? .blue : .primary)
+            }
+        }
+        
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Button(action: {
+                HapticManager.shared.selection()
+                viewMode = viewMode == .grid ? .list : .grid
+            }) {
+                Image(systemName: viewMode == .grid ? "list.bullet" : "square.grid.2x2")
+                    .imageScale(.large)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var deleteAlertButtons: some View {
+        Button("Cancel", role: .cancel) { }
+        Button("Delete", role: .destructive) {
+            if let bookmark = bookmarkToDelete {
+                deleteBookmark(bookmark)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var deleteAlertMessage: some View {
+        if let bookmark = bookmarkToDelete {
+            Text("Are you sure you want to delete \"\(bookmark.title)\"? This action cannot be undone.")
+        }
+    }
+    
+    private var addBookmarkButton: some View {
+        Button(action: { showingAddBookmark = true }) {
+            Image(systemName: "plus")
+                .font(.title2)
+                .foregroundColor(.white)
+                .frame(width: 56, height: 56)
+                .background(Color.blue)
+                .clipShape(Circle())
+                .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
+        }
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
+    }
+    
+    private func handleQuickAction(_ action: QuickAction?) {
+        if action == .newBookmark {
+            showingAddBookmark = true
+            HapticManager.shared.light()
+        } else if action == .search {
+            HapticManager.shared.light()
         }
     }
     
@@ -203,7 +276,8 @@ struct HomeView: View {
         // Apply tag filter from filter sheet
         if !selectedTags.isEmpty {
             baseFiltered = baseFiltered.filter { bookmark in
-                !Set(bookmark.tags).isDisjoint(with: selectedTags)
+                let bookmarkTags = Set(bookmark.tags)
+                return !bookmarkTags.isDisjoint(with: selectedTags)
             }
         }
         
@@ -211,20 +285,22 @@ struct HomeView: View {
         let trimmedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedQuery.isEmpty {
             baseFiltered = baseFiltered.filter { bookmark in
-                bookmark.title.localizedCaseInsensitiveContains(trimmedQuery) ||
-                bookmark.url?.localizedCaseInsensitiveContains(trimmedQuery) == true ||
-                bookmark.tags.contains { tag in
+                let titleMatch = bookmark.title.localizedCaseInsensitiveContains(trimmedQuery)
+                let urlMatch = bookmark.url?.localizedCaseInsensitiveContains(trimmedQuery) == true
+                let tagMatch = bookmark.tags.contains { tag in
                     tag.localizedCaseInsensitiveContains(trimmedQuery)
                 }
+                return titleMatch || urlMatch || tagMatch
             }
         }
         
+        let totalCount = baseFiltered.count
         let favoriteCount = baseFiltered.filter { $0.isFavorite }.count
         
-        return [
-            .init(id: "all", title: "All", count: baseFiltered.count),
-            .init(id: "favorites", title: "Favorites", count: favoriteCount)
-        ]
+        let allItem = FilterPillsBar.FilterItem(id: "all", title: "All", count: totalCount)
+        let favoritesItem = FilterPillsBar.FilterItem(id: "favorites", title: "Favorites", count: favoriteCount)
+        
+        return [allItem, favoritesItem]
     }
     
     private var hasActiveFilters: Bool {

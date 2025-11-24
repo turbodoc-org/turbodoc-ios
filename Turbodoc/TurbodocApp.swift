@@ -46,15 +46,15 @@ struct TurbodocApp: App {
                     SyncQueueManager.shared.configure(modelContext: sharedModelContainer.mainContext, authService: authService)
                     
                     // If user is already authenticated, process pending bookmarks and sync
-                    if authService.isAuthenticated {
+                    if authService.authenticationStatus == .authenticated {
                         Task {
                             await PendingBookmarksService.shared.processPendingBookmarks()
                             await SyncQueueManager.shared.processPendingOperations()
                         }
                     }
                 }
-                .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
-                    if isAuthenticated {
+                .onChange(of: authService.authenticationStatus) { _, status in
+                    if status == .authenticated {
                         // Process pending bookmarks and sync when user becomes authenticated
                         Task {
                             await PendingBookmarksService.shared.processPendingBookmarks()

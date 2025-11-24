@@ -2,9 +2,15 @@ import Foundation
 import SwiftUI
 import Supabase
 
+enum AuthenticationStatus {
+    case authenticated
+    case notAuthenticated
+    case loading
+}
+
 @MainActor
 class AuthenticationService: ObservableObject {
-    @Published var isAuthenticated = false
+    @Published var authenticationStatus: AuthenticationStatus = .loading
     @Published var currentUser: User?
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -32,7 +38,7 @@ class AuthenticationService: ObservableObject {
             let user = User(id: response.user.id.uuidString, email: response.user.email ?? email)
 
             currentUser = user
-            isAuthenticated = true
+            authenticationStatus = .authenticated
             
             authToken = response.accessToken
             saveAuthTokenToSharedStorage(response.accessToken)
@@ -55,7 +61,7 @@ class AuthenticationService: ObservableObject {
             let user = User(id: response.user.id.uuidString, email: response.user.email ?? email)
             
             currentUser = user
-            isAuthenticated = true
+            authenticationStatus = .authenticated
             
             authToken = response.session?.accessToken
             if let token = response.session?.accessToken {
@@ -78,7 +84,7 @@ class AuthenticationService: ObservableObject {
             try await supabaseClient.auth.signOut()
             
             currentUser = nil
-            isAuthenticated = false
+            authenticationStatus = .notAuthenticated
             authToken = nil
             clearAuthTokenFromSharedStorage()
             
@@ -121,11 +127,11 @@ class AuthenticationService: ObservableObject {
             let user = User(id: session.user.id.uuidString, email: session.user.email ?? "")
 
             currentUser = user
-            isAuthenticated = true
+            authenticationStatus = .authenticated
             authToken = session.accessToken
             saveAuthTokenToSharedStorage(session.accessToken)
         } catch {
-            isAuthenticated = false
+            authenticationStatus = .notAuthenticated
             currentUser = nil
             authToken = nil
             clearAuthTokenFromSharedStorage()

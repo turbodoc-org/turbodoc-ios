@@ -128,15 +128,15 @@ struct NotesView: View {
                 pendingOperationsCount = SyncQueueManager.shared.pendingOperationsCount
             }
             .onChange(of: scenePhase) {
-                if scenePhase == .active && authService.isAuthenticated {
+                if scenePhase == .active && authService.authenticationStatus == .authenticated {
                     // Always refresh when app becomes active to get latest data
                     Task {
                         await refreshNotes()
                     }
                 }
             }
-            .onChange(of: authService.isAuthenticated) {
-                if authService.isAuthenticated {
+            .onChange(of: authService.authenticationStatus) {
+                if authService.authenticationStatus == .authenticated {
                     loadNotes()
                 }
             }
