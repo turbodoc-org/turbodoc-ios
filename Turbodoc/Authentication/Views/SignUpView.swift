@@ -40,15 +40,9 @@ struct SignUpView: View {
                             .foregroundColor(Constants.Colors.cardForeground)
                             .tint(Constants.Colors.primary)
                         
-                        SecureField("Password", text: $password)
-                            .primaryTextFieldStyle()
-                            .foregroundColor(Constants.Colors.cardForeground)
-                            .tint(Constants.Colors.primary)
+                        SecureFieldWithToggle(placeholder: "Password", text: $password)
                         
-                        SecureField("Confirm Password", text: $confirmPassword)
-                            .primaryTextFieldStyle()
-                            .foregroundColor(Constants.Colors.cardForeground)
-                            .tint(Constants.Colors.primary)
+                        SecureFieldWithToggle(placeholder: "Confirm Password", text: $confirmPassword)
                         
                         Button(action: signUp) {
                             HStack {

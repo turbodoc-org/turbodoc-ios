@@ -49,10 +49,7 @@ struct SignInView: View {
                                 }
                                 
                                 FormField(label: "Password") {
-                                    SecureField("Password", text: $password)
-                                        .primaryTextFieldStyle()
-                                        .foregroundColor(Constants.Colors.cardForeground)
-                                        .tint(Constants.Colors.primary)
+                                    SecureFieldWithToggle(placeholder: "Password", text: $password)
                                 }
                                 
                                 Button("Forgot your password?") {
