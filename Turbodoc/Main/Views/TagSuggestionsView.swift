@@ -3,9 +3,11 @@ import SwiftUI
 /// Reusable tag suggestions component with chip-based UI and caching
 struct TagSuggestionsView: View {
     @Binding var selectedTags: [String]
+    var shouldProcess: Binding<Bool>? = nil
     @State private var availableTags: [APITagItem] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var newTagsText = ""
     
     // Cache management
     @AppStorage("cachedTags") private var cachedTagsJSON: String = "[]"
@@ -18,6 +20,13 @@ struct TagSuggestionsView: View {
                 .font(.caption)
                 .fontWeight(.medium)
                 .foregroundColor(.secondary)
+            
+            TextField("Enter new tags (comma separated)", text: $newTagsText)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .font(.caption)
+                .onSubmit {
+                    addNewTags()
+                }
             
             if isLoading {
                 HStack {
@@ -62,6 +71,12 @@ struct TagSuggestionsView: View {
         .onAppear {
             loadTags()
         }
+        .onChange(of: shouldProcess?.wrappedValue) { _, newValue in
+            if newValue == true {
+                addNewTags()
+                shouldProcess?.wrappedValue = false
+            }
+        }
     }
     
     // MARK: - Tag Management
@@ -72,6 +87,16 @@ struct TagSuggestionsView: View {
         } else {
             selectedTags.append(tag)
         }
+    }
+    
+    private func addNewTags() {
+        let newTags = newTagsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty && !selectedTags.contains($0) }
+        
+        selectedTags.append(contentsOf: newTags)
+        newTagsText = ""
     }
     
     // MARK: - Cache & API

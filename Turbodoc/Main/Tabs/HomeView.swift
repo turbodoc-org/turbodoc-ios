@@ -1137,7 +1137,7 @@ struct TagEditorView: View {
     let bookmark: BookmarkItem
     let onSave: ([String]) -> Void
     
-    @State private var tagText = ""
+    @State private var tagsText = ""
     @State private var tags: [String]
     @Environment(\.dismiss) private var dismiss
     
@@ -1165,14 +1165,14 @@ struct TagEditorView: View {
                         .font(.headline)
                     
                     HStack {
-                        TextField("Enter tag name", text: $tagText)
+                        TextField("Enter tags (comma separated)", text: $tagsText)
                             .textFieldStyle(RoundedBorderTextFieldStyle())
                             .onSubmit {
-                                addTag()
+                                addTags()
                             }
                         
-                        Button("Add", action: addTag)
-                            .disabled(tagText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("Add", action: addTags)
+                            .disabled(tagsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     
                     if !tags.isEmpty {
@@ -1228,12 +1228,14 @@ struct TagEditorView: View {
         }
     }
     
-    private func addTag() {
-        let newTag = tagText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if !newTag.isEmpty && !tags.contains(newTag) {
-            tags.append(newTag)
-            tagText = ""
-        }
+    private func addTags() {
+        let newTags = tagsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty && !tags.contains($0) }
+        
+        tags.append(contentsOf: newTags)
+        tagsText = ""
     }
     
     private func removeTag(_ tag: String) {

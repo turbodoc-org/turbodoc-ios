@@ -6,6 +6,7 @@ struct AddBookmarkView: View {
     @State private var urlText = ""
     @State private var isValidURL = false
     @State private var selectedTags: [String] = []
+    @State private var shouldProcessTags = false
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -38,7 +39,7 @@ struct AddBookmarkView: View {
                 }
                 
                 // Tag Suggestions
-                TagSuggestionsView(selectedTags: $selectedTags)
+                TagSuggestionsView(selectedTags: $selectedTags, shouldProcess: $shouldProcessTags)
                 
                 Spacer()
             }
@@ -54,7 +55,11 @@ struct AddBookmarkView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
-                        saveBookmark()
+                        shouldProcessTags = true
+                        // Give a moment for the state change to propagate
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            saveBookmark()
+                        }
                     }
                     .disabled(!isValidURL)
                 }

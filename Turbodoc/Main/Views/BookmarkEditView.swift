@@ -9,6 +9,7 @@ struct BookmarkEditView: View {
     @State private var url: String
     @State private var selectedTags: [String]
     @State private var status: BookmarkItem.ItemStatus
+    @State private var shouldProcessTags = false
     @Environment(\.dismiss) private var dismiss
     
     init(bookmark: BookmarkItem, onSave: @escaping (BookmarkItem) -> Void) {
@@ -54,7 +55,7 @@ struct BookmarkEditView: View {
                 
                 // Tags Section
                 Section(header: Text("Tags")) {
-                    TagSuggestionsView(selectedTags: $selectedTags)
+                    TagSuggestionsView(selectedTags: $selectedTags, shouldProcess: $shouldProcessTags)
                     
                     if !selectedTags.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
@@ -97,7 +98,11 @@ struct BookmarkEditView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
-                        saveChanges()
+                        shouldProcessTags = true
+                        // Give a moment for the state change to propagate
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            saveChanges()
+                        }
                     }
                     .disabled(title.trim().isEmpty || url.trim().isEmpty)
                 }

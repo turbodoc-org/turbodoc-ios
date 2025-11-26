@@ -16,6 +16,7 @@ struct EnhancedShareView: View {
     @State private var isDuplicate = false
     @State private var showTagSuggestions = false
     @State private var hasUserEditedTitle = false
+    @State private var newTagsText = ""
     
     private let appGroupIdentifier = "group.ai.turbodoc.ios.Turbodoc"
     
@@ -106,6 +107,11 @@ struct EnhancedShareView: View {
                         }
                         .padding(.vertical, 4)
                     }
+                    
+                    TextField("Enter new tags (comma separated)", text: $newTagsText)
+                        .onSubmit {
+                            addNewTags()
+                        }
                     
                     Button(action: { showTagSuggestions.toggle() }) {
                         HStack {
@@ -370,6 +376,9 @@ struct EnhancedShareView: View {
     }
     
     private func saveBookmark() {
+        // Process any remaining text in the new tags field
+        addNewTags()
+        
         let bookmarkData = ShareBookmarkData(
             url: sharedURL,
             title: title,
@@ -379,6 +388,16 @@ struct EnhancedShareView: View {
         )
         
         onSave(bookmarkData)
+    }
+    
+    private func addNewTags() {
+        let newTags = newTagsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty && !selectedTags.contains($0) }
+        
+        selectedTags.append(contentsOf: newTags)
+        newTagsText = ""
     }
 }
 
