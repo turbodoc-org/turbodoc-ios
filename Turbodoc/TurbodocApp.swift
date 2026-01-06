@@ -64,6 +64,9 @@ struct TurbodocApp: App {
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .active {
+                        // Invalidate bookmarks cache when app becomes active
+                        // This ensures fresh data is fetched in case share extension added bookmarks
+                        APIService.shared.invalidateBookmarksCache()
                         handlePendingQuickAction()
                     }
                 }
