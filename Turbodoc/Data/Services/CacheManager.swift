@@ -78,15 +78,32 @@ final class CacheManager {
     func clearAll() {
         do {
             let contents = try fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil)
-            
+
             for fileURL in contents {
                 try fileManager.removeItem(at: fileURL)
             }
-            
+
             currentCacheSize = 0
             cachedItemsCount = 0
         } catch {
             print("❌ Cache: Failed to clear cache: \(error)")
+        }
+    }
+
+    /// Removes all cache entries that match a given prefix
+    func removeAll(withPrefix prefix: String) {
+        do {
+            let contents = try fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil)
+
+            for fileURL in contents {
+                if fileURL.lastPathComponent.hasPrefix(prefix) {
+                    try fileManager.removeItem(at: fileURL)
+                }
+            }
+
+            calculateCacheSize()
+        } catch {
+            print("❌ Cache: Failed to remove items with prefix \(prefix): \(error)")
         }
     }
     

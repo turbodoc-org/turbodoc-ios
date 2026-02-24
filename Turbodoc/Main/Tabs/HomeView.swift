@@ -80,8 +80,8 @@ struct HomeView: View {
                 deleteAlertMessage
             }
             .sheet(isPresented: $showingAddBookmark) {
-                AddBookmarkView(onSave: { url, tags in
-                    addBookmark(url: url, tags: tags)
+                AddBookmarkView(onSave: { url, customTitle, tags in
+                    addBookmark(url: url, customTitle: customTitle, tags: tags)
                 })
             }
             .sheet(isPresented: $showingFilters) {
@@ -693,7 +693,7 @@ struct HomeView: View {
         }
     }
     
-    private func addBookmark(url: String, tags: [String] = []) {
+    private func addBookmark(url: String, customTitle: String? = nil, tags: [String] = []) {
         guard let user = authService.currentUser else {
             errorMessage = "Please sign in to add bookmarks"
             return
@@ -708,9 +708,13 @@ struct HomeView: View {
             let domain = urlComponents?.host ?? ""
             let faviconURL = urlComponents.map { "https://www.google.com/s2/favicons?domain=\($0.host ?? "")&sz=64" }
             
-            // Extract title, fallback to URL host if no title
+            let trimmedCustomTitle = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Use custom title if provided, otherwise fallback to metadata and domain
             let pageTitle: String
-            if let extractedTitle = metadata?.title, !extractedTitle.isEmpty {
+            if let customTitle = trimmedCustomTitle, !customTitle.isEmpty {
+                pageTitle = customTitle
+            } else if let extractedTitle = metadata?.title, !extractedTitle.isEmpty {
                 pageTitle = extractedTitle
             } else if !domain.isEmpty {
                 pageTitle = domain

@@ -14,8 +14,16 @@ class APIService {
         networkService.setAuthService(authService)
     }
     
+    // MARK: - Cache Invalidation
+
+    /// Invalidates the cached bookmarks, forcing a fresh fetch from the API on next request.
+    /// Call this when bookmarks may have been added externally (e.g., via share extension).
+    func invalidateBookmarksCache() {
+        cacheManager.removeAll(withPrefix: "bookmarks_")
+    }
+
     // MARK: - Bookmark Operations
-    
+
     func fetchBookmarks(userId: String) async throws -> [BookmarkItem] {
         let endpoint = APIConfig.Endpoints.bookmarks
         let cacheKey = "bookmarks_\(userId)"
