@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct AddBookmarkView: View {
-    let onSave: (String, [String]) -> Void
+    let onSave: (String, String?, [String]) -> Void
     
+    @State private var titleText = ""
     @State private var urlText = ""
     @State private var isValidURL = false
     @State private var selectedTags: [String] = []
@@ -12,6 +13,15 @@ struct AddBookmarkView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Title (Optional)")
+                        .font(.headline)
+
+                    TextField("Custom title", text: $titleText)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .disableAutocorrection(true)
+                }
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Enter URL")
                         .font(.headline)
@@ -68,7 +78,8 @@ struct AddBookmarkView: View {
     }
     
     private func saveBookmark() {
-        onSave(urlText, selectedTags)
+        let trimmedTitle = titleText.trimmingCharacters(in: .whitespacesAndNewlines)
+        onSave(urlText, trimmedTitle.isEmpty ? nil : trimmedTitle, selectedTags)
         dismiss()
     }
     
@@ -125,7 +136,7 @@ struct QuickAddButton: View {
 }
 
 #Preview {
-    AddBookmarkView { url, tags in
-        print("Would save: \(url) with tags: \(tags)")
+    AddBookmarkView { url, title, tags in
+        print("Would save: \(url) with title: \(title ?? "nil") and tags: \(tags)")
     }
 }
