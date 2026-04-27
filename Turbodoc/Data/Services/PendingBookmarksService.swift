@@ -19,23 +19,25 @@ class PendingBookmarksService {
     /// Processes all pending bookmarks from the share extension
     func processPendingBookmarks() async {
         let pendingBookmarks = getPendingBookmarks()
-        
+
         guard !pendingBookmarks.isEmpty else {
             return
         }
-        
-        for (_, bookmarkData) in pendingBookmarks.enumerated() {
+
+        // Keep entries that fail to sync so the next launch can retry them
+        // instead of silently dropping the user's bookmark.
+        var remaining: [[String: Any]] = []
+        for bookmarkData in pendingBookmarks {
             do {
                 let bookmark = try await createBookmarkFromShareData(bookmarkData)
-                let savedBookmark = try await APIService.shared.saveBookmark(bookmark)
+                _ = try await APIService.shared.saveBookmark(bookmark)
             } catch {
-                // Continue processing other bookmarks even if one fails
+                remaining.append(bookmarkData)
             }
         }
-        
-        // Clear processed bookmarks
-        clearPendingBookmarks()
-        
+
+        writePendingBookmarks(remaining)
+
         // Update local bookmark cache for deduplication
         updateLocalBookmarkCache()
     }
@@ -69,9 +71,9 @@ class PendingBookmarksService {
         guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
             return
         }
-        
+
         let bookmarksURL = containerURL.appendingPathComponent("pendingBookmarks.json")
-        
+
         do {
             if FileManager.default.fileExists(atPath: bookmarksURL.path) {
                 try FileManager.default.removeItem(at: bookmarksURL)
@@ -80,19 +82,34 @@ class PendingBookmarksService {
             // Silent error handling
         }
     }
+
+    private func writePendingBookmarks(_ bookmarks: [[String: Any]]) {
+        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
+            return
+        }
+
+        let bookmarksURL = containerURL.appendingPathComponent("pendingBookmarks.json")
+
+        if bookmarks.isEmpty {
+            clearPendingBookmarks()
+            return
+        }
+
+        if let data = try? JSONSerialization.data(withJSONObject: bookmarks) {
+            try? data.write(to: bookmarksURL)
+        }
+    }
     
     private func createBookmarkFromShareData(_ data: [String: Any]) async throws -> BookmarkItem {
         guard let url = data["url"] as? String,
-              let type = data["type"] as? String,
               let title = data["title"] as? String else {
             throw PendingBookmarkError.invalidData
         }
-        
-        // Determine content type based on share extension type
+
+        // The share extension currently only writes link-typed bookmarks, but
+        // accept an optional `type` for forward compatibility.
         let contentType: BookmarkItem.ContentType
-        switch type {
-        case "url":
-            contentType = .link
+        switch data["type"] as? String {
         case "image":
             contentType = .image
         case "video":
@@ -104,7 +121,7 @@ class PendingBookmarksService {
         default:
             contentType = .link
         }
-        
+
         // Create the bookmark item
         let bookmark = BookmarkItem(
             title: title.isEmpty ? extractTitleFromURL(url) : title,
@@ -112,9 +129,28 @@ class PendingBookmarksService {
             contentType: contentType,
             userId: await getCurrentUserId()
         )
-        
-        // Try to fetch OG image for URLs
-        if contentType == .link, let actualURL = URL(string: url) {
+
+        // Preserve the user's choices captured in the share extension UI.
+        if let statusRaw = data["status"] as? String,
+           let status = BookmarkItem.ItemStatus(rawValue: statusRaw) {
+            bookmark.status = status
+        }
+
+        if let tags = data["tags"] as? [String] {
+            bookmark.tags = tags
+        } else if let tagsString = data["tags"] as? String, !tagsString.isEmpty {
+            bookmark.tags = tagsString
+                .split(separator: "|")
+                .map { String($0) }
+        }
+
+        if let ogImage = data["og_image"] as? String, !ogImage.isEmpty {
+            bookmark.ogImageURL = ogImage
+        }
+
+        // If we don't already have an OG image, try to fetch one. We only
+        // override the title if the share extension didn't capture one.
+        if contentType == .link, bookmark.ogImageURL == nil {
             do {
                 let ogResponse = try await APIService.shared.fetchOgImage(for: url)
                 if let ogImageURL = ogResponse.ogImage {
@@ -127,7 +163,7 @@ class PendingBookmarksService {
                 // Continue without OG image - not a critical failure
             }
         }
-        
+
         return bookmark
     }
     
