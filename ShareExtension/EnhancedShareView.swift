@@ -274,16 +274,23 @@ struct EnhancedShareView: View {
         guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
             return
         }
-        
-        let bookmarksURL = containerURL.appendingPathComponent("savedBookmarks.json")
-        
-        guard FileManager.default.fileExists(atPath: bookmarksURL.path),
-              let data = try? Data(contentsOf: bookmarksURL),
-              let bookmarks = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return
+
+        // Check both the synced dedup cache and the pending-retry queue so the
+        // user is warned even if a prior share hasn't been flushed to the server yet.
+        let candidateFiles = ["savedBookmarks.json", "pendingBookmarks.json"]
+
+        for fileName in candidateFiles {
+            let bookmarksURL = containerURL.appendingPathComponent(fileName)
+            guard FileManager.default.fileExists(atPath: bookmarksURL.path),
+                  let data = try? Data(contentsOf: bookmarksURL),
+                  let bookmarks = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                continue
+            }
+            if bookmarks.contains(where: { ($0["url"] as? String) == sharedURL }) {
+                isDuplicate = true
+                return
+            }
         }
-        
-        isDuplicate = bookmarks.contains { ($0["url"] as? String) == sharedURL }
     }
     
     private func fetchOGMetadata(url: String) async throws -> (title: String?, ogImage: String?) {

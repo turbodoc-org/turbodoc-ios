@@ -119,57 +119,36 @@ class ShareViewController: UIViewController {
     }
     
     private func saveBookmark(data: ShareBookmarkData) {
-        // Check for duplicates
-        if checkDuplicate(url: data.url) {
-            // Save anyway if user chose to
-        }
-        
-        // Try to sync immediately to remote DB
+        // Try to sync immediately to remote. On success the bookmark is recorded
+        // in the synced-dedup cache; on any failure it is queued in the pending
+        // file so the main app can retry on next launch.
         Task {
             await syncBookmarkToRemote(data: data)
-            
+
             DispatchQueue.main.async { [weak self] in
                 self?.completeShare()
             }
         }
     }
-    
-    private func checkDuplicate(url: String) -> Bool {
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
-            return false
-        }
-        
-        let bookmarksURL = containerURL.appendingPathComponent("savedBookmarks.json")
-        
-        guard FileManager.default.fileExists(atPath: bookmarksURL.path),
-              let data = try? Data(contentsOf: bookmarksURL),
-              let bookmarks = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return false
-        }
-        
-        return bookmarks.contains { ($0["url"] as? String) == url }
-    }
-    
+
     private func syncBookmarkToRemote(data: ShareBookmarkData) async {
         guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
-            // Fall back to saving locally only
-            saveLocalBookmark(data: data)
+            savePendingBookmark(data: data)
             return
         }
-        
+
         let authURL = containerURL.appendingPathComponent("auth.json")
         guard let authData = try? Data(contentsOf: authURL),
               let json = try? JSONSerialization.jsonObject(with: authData) as? [String: Any],
               let token = json["accessToken"] as? String else {
-            // Fall back to saving locally only
-            saveLocalBookmark(data: data)
+            savePendingBookmark(data: data)
             return
         }
-        
+
         // Get API URL from main app
         let apiURLKey = containerURL.appendingPathComponent("apiURL.txt")
         let apiURL = (try? String(contentsOf: apiURLKey, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? "https://api.turbodoc.ai"
-        
+
         // Create bookmark payload
         let bookmark: [String: Any] = [
             "url": data.url,
@@ -177,67 +156,99 @@ class ShareViewController: UIViewController {
             "status": data.status,
             "tags": data.tags.joined(separator: "|")
         ]
-        
+
         guard let jsonData = try? JSONSerialization.data(withJSONObject: bookmark) else {
-            saveLocalBookmark(data: data)
+            savePendingBookmark(data: data)
             return
         }
-        
+
         guard let url = URL(string: "\(apiURL)/v1/bookmarks") else {
-            saveLocalBookmark(data: data)
+            savePendingBookmark(data: data)
             return
         }
-        
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
-        
+
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
-            
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 201 || httpResponse.statusCode == 200 {
-                // Successfully saved to remote
-                saveLocalBookmark(data: data)
+
+            if let httpResponse = response as? HTTPURLResponse,
+               httpResponse.statusCode == 201 || httpResponse.statusCode == 200 {
+                // Successfully persisted to the server: record in the synced
+                // dedup cache and remove any stale pending entry for the same URL.
+                saveSyncedBookmark(data: data)
+                removePendingBookmark(url: data.url)
             } else {
-                // Failed to save to remote, save locally for later sync
-                saveLocalBookmark(data: data)
+                savePendingBookmark(data: data)
             }
         } catch {
-            // Network error, save locally for later sync
-            saveLocalBookmark(data: data)
+            savePendingBookmark(data: data)
         }
     }
-    
-    private func saveLocalBookmark(data: ShareBookmarkData) {
+
+    private func saveSyncedBookmark(data: ShareBookmarkData) {
+        upsertBookmark(data: data, fileName: "savedBookmarks.json")
+    }
+
+    private func savePendingBookmark(data: ShareBookmarkData) {
+        upsertBookmark(data: data, fileName: "pendingBookmarks.json")
+    }
+
+    private func removePendingBookmark(url: String) {
         guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
             return
         }
-        
-        let bookmarksURL = containerURL.appendingPathComponent("savedBookmarks.json")
-        
+
+        let bookmarksURL = containerURL.appendingPathComponent("pendingBookmarks.json")
+
+        guard FileManager.default.fileExists(atPath: bookmarksURL.path),
+              let existingData = try? Data(contentsOf: bookmarksURL),
+              var bookmarks = try? JSONSerialization.jsonObject(with: existingData) as? [[String: Any]] else {
+            return
+        }
+
+        bookmarks.removeAll { ($0["url"] as? String) == url }
+
+        if let jsonData = try? JSONSerialization.data(withJSONObject: bookmarks) {
+            try? jsonData.write(to: bookmarksURL)
+        }
+    }
+
+    private func upsertBookmark(data: ShareBookmarkData, fileName: String) {
+        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
+            return
+        }
+
+        let bookmarksURL = containerURL.appendingPathComponent(fileName)
+
         var bookmarks: [[String: Any]] = []
         if FileManager.default.fileExists(atPath: bookmarksURL.path),
            let existingData = try? Data(contentsOf: bookmarksURL),
            let existing = try? JSONSerialization.jsonObject(with: existingData) as? [[String: Any]] {
             bookmarks = existing
         }
-        
+
+        // Dedupe by URL so repeated shares don't accumulate duplicate entries.
+        bookmarks.removeAll { ($0["url"] as? String) == data.url }
+
         let bookmark: [String: Any] = [
             "url": data.url,
+            "type": "url",
             "title": data.title,
             "status": data.status,
             "tags": data.tags,
             "og_image": data.ogImageURL ?? "",
             "created_at": ISO8601DateFormatter().string(from: Date())
         ]
-        
+
         bookmarks.append(bookmark)
-        
-        if let jsonData = try? JSONSerialization.data(withJSONObject: bookmarks),
-           let _ = try? jsonData.write(to: bookmarksURL) {
-            // Successfully saved locally
+
+        if let jsonData = try? JSONSerialization.data(withJSONObject: bookmarks) {
+            try? jsonData.write(to: bookmarksURL)
         }
     }
     
