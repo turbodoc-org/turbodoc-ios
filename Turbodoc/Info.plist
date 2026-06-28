@@ -31,5 +31,18 @@
 			<string>com.turbodoc.search</string>
 		</dict>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>ai.turbodoc.ios</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>turbodoc</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

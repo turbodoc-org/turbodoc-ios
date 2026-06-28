@@ -34,14 +34,10 @@ struct NotesView: View {
     
     private var filterItems: [FilterPillsBar.FilterItem] {
         let favoriteCount = allNotes.filter { $0.isFavorite }.count
-        let recentCount = allNotes.filter {
-            Calendar.current.isDate($0.createdAt, equalTo: Date(), toGranularity: .weekOfYear)
-        }.count
-        
+
         return [
             .init(id: "all", title: "All", count: allNotes.count),
-            .init(id: "favorites", title: "Favorites", count: favoriteCount),
-            .init(id: "recent", title: "Recent", count: recentCount)
+            .init(id: "favorites", title: "Favorites", count: favoriteCount)
         ]
     }
     
@@ -116,6 +112,9 @@ struct NotesView: View {
                 applyFilter()
             }
             .onAppear {
+                // Migrate any previously-persisted "recent" selection (now removed)
+                // back to "all" so the user doesn't end up on a non-existent filter.
+                if selectedFilter == "recent" { selectedFilter = "all" }
                 refreshNotesIfNeeded()
             }
             .onReceive(NetworkMonitor.shared.connectionStatusChanged) { connected in
@@ -425,9 +424,6 @@ struct NotesView: View {
         switch selectedFilter {
         case "favorites":
             filtered = filtered.filter { $0.isFavorite }
-        case "recent":
-            let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-            filtered = filtered.filter { $0.createdAt >= weekAgo }
         default: // "all"
             break
         }

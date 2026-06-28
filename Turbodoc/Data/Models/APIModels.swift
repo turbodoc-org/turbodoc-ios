@@ -133,6 +133,10 @@ struct APITagsResponse: Codable {
 
 // MARK: - Note API Models
 
+struct APITranscriptionResponse: Codable {
+    let text: String
+}
+
 struct APINoteRequest: Codable {
     let title: String?
     let content: String
@@ -236,4 +240,18 @@ struct TagsContainer: Codable {
         var container = encoder.singleValueContainer()
         try container.encode(array)
     }
+}
+
+// MARK: - User Stats Models
+
+struct APIUserStatsResponse: Codable {
+    let data: APIUserStats
+}
+
+struct APIUserStats: Codable {
+    let bookmark_count: Int
+    let note_count: Int
+    let tag_count: Int
+    let favorite_count: Int
+    let member_since: String?
 }

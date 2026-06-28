@@ -24,8 +24,10 @@ struct APIConfig {
         static let searchBookmarks = "/v1/bookmarks/search"
         static let notes = "/v1/notes" // supports ?search= query parameter
         static let noteById = "/v1/notes/" // append note ID
+        static let notesTranscribe = "/v1/notes/transcribe" // voice -> text (Workers AI Whisper)
         static let users = "/v1/users"
         static let userById = "/v1/users/" // append user ID
+        static let userStats = "/v1/users/stats" // current-user stats summary
         static let ogImage = "/v1/bookmarks/og-image" // OG image endpoint
         static let tags = "/v1/tags" // Get user's top tags
     }
