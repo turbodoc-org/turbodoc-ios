@@ -76,6 +76,8 @@ struct Constants {
     
     struct App {
         static let name = "Turbodoc"
-        static let version = "1.0.0"
+        static var version: String {
+            Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        }
     }
 }

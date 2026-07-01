@@ -59,13 +59,21 @@ struct ProfileView: View {
             
             VStack(spacing: 8) {
                 if let user = authService.currentUser {
-                    Text(user.name ?? user.email.components(separatedBy: "@").first ?? "User")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    
-                    Text(user.email)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    if let name = user.name,
+                       !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    {
+                        Text(name)
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                        
+                        Text(user.email)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text(user.email)
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                    }
                 } else {
                     Text("User")
                         .font(.title2)
@@ -363,7 +371,7 @@ struct AboutView: View {
                         .font(.title)
                         .fontWeight(.bold)
                     
-                    Text("Version 1.0.0")
+                    Text("Version \(Constants.App.version)")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }

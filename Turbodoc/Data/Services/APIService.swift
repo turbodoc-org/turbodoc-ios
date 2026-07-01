@@ -15,15 +15,15 @@ class APIService {
     }
     
     // MARK: - Cache Invalidation
-
+    
     /// Invalidates the cached bookmarks, forcing a fresh fetch from the API on next request.
     /// Call this when bookmarks may have been added externally (e.g., via share extension).
     func invalidateBookmarksCache() {
         cacheManager.removeAll(withPrefix: "bookmarks_")
     }
-
+    
     // MARK: - Bookmark Operations
-
+    
     func fetchBookmarks(userId: String) async throws -> [BookmarkItem] {
         let endpoint = APIConfig.Endpoints.bookmarks
         let cacheKey = "bookmarks_\(userId)"
@@ -300,23 +300,16 @@ class APIService {
     
     // MARK: - Statistics Operations
     
-    func getUserStats(userId: String) async throws -> UserStats {
-        let endpoint = APIConfig.Endpoints.userById + userId
+    func getUserStats(userId: String) async throws -> APIUserStats {
+        let endpoint = APIConfig.Endpoints.userStats
         
         do {
-            let _ = try await networkService.performRequest(
+            let response = try await networkService.performRequest(
                 endpoint: endpoint,
                 method: .GET,
-                responseType: APIUserResponse.self
+                responseType: APIUserStatsResponse.self
             )
-            
-            // For now, return mock stats since the API doesn't have a stats endpoint
-            // This can be enhanced when a dedicated stats endpoint is added
-            return UserStats(
-                bookmarkCount: 0,
-                tagCount: 0,
-                totalSize: 0
-            )
+            return response.data
         } catch {
             throw APIError.networkError
         }
@@ -324,12 +317,6 @@ class APIService {
 }
 
 // MARK: - Supporting Models
-
-struct UserStats {
-    let bookmarkCount: Int
-    let tagCount: Int
-    let totalSize: Int64 // in bytes
-}
 
 enum APIError: Error {
     case networkError
