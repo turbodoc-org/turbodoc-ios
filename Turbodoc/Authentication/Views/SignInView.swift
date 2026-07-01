@@ -6,6 +6,7 @@ struct SignInView: View {
     @State private var password = ""
     @State private var showingForgotPassword = false
     @State private var showingSignUp = false
+    @State private var showingEmailVerification = false
     
     var body: some View {
         NavigationView {
@@ -108,6 +109,20 @@ struct SignInView: View {
         }
         .sheet(isPresented: $showingSignUp) {
             SignUpView()
+                .environmentObject(authService)
+        }
+        .sheet(isPresented: $showingEmailVerification, onDismiss: {
+            // Once the user dismisses the verification screen, clear pending
+            // state so we don't re-present after they've reacted.
+            authService.pendingVerificationEmail = nil
+        }) {
+            if let pendingEmail = authService.pendingVerificationEmail {
+                EmailVerificationView(email: pendingEmail)
+                    .environmentObject(authService)
+            }
+        }
+        .onChange(of: authService.pendingVerificationEmail) { _, newValue in
+            showingEmailVerification = newValue != nil
         }
     }
     

@@ -29,15 +29,15 @@ struct NotesView: View {
     // Grid layout - 2 columns with improved spacing
     private let columns = [
         GridItem(.flexible(), spacing: 16),
-        GridItem(.flexible(), spacing: 16)
+        GridItem(.flexible(), spacing: 16),
     ]
     
     private var filterItems: [FilterPillsBar.FilterItem] {
         let favoriteCount = allNotes.filter { $0.isFavorite }.count
-
+        
         return [
             .init(id: "all", title: "All", count: allNotes.count),
-            .init(id: "favorites", title: "Favorites", count: favoriteCount)
+            .init(id: "favorites", title: "Favorites", count: favoriteCount),
         ]
     }
     
@@ -145,7 +145,7 @@ struct NotesView: View {
                 }
             }
             .alert("Delete Note", isPresented: $showingDeleteConfirmation) {
-                Button("Cancel", role: .cancel) { }
+                Button("Cancel", role: .cancel) {}
                 Button("Delete", role: .destructive) {
                     if let note = noteToDelete {
                         deleteNote(note)
@@ -153,7 +153,9 @@ struct NotesView: View {
                 }
             } message: {
                 if let note = noteToDelete {
-                    Text("Are you sure you want to delete \"\(note.displayTitle)\"? This action cannot be undone.")
+                    Text(
+                        "Are you sure you want to delete \"\(note.displayTitle)\"? This action cannot be undone."
+                    )
                 }
             }
             .sheet(isPresented: $showingAddNote) {
@@ -367,7 +369,7 @@ struct NotesView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 20)
-            .padding(.bottom, 100) // Space for floating action button
+            .padding(.bottom, 100)  // Space for floating action button
         }
         .refreshable {
             await refreshNotes()
@@ -424,22 +426,28 @@ struct NotesView: View {
         switch selectedFilter {
         case "favorites":
             filtered = filtered.filter { $0.isFavorite }
-        default: // "all"
+        default:  // "all"
             break
         }
         
         // Apply sorting
         switch sortOrder {
         case "date_oldest":
-            filtered.sort { $0.updatedAt > $1.updatedAt } // Oldest first = ascending date
+            filtered.sort { $0.updatedAt > $1.updatedAt }  // Oldest first = ascending date
         case "alpha_asc":
-            filtered.sort { ($0.title ?? $0.displayTitle).localizedCaseInsensitiveCompare($1.title ?? $1.displayTitle) == .orderedAscending }
+            filtered.sort {
+                ($0.title ?? $0.displayTitle).localizedCaseInsensitiveCompare(
+                    $1.title ?? $1.displayTitle) == .orderedAscending
+            }
         case "alpha_desc":
-            filtered.sort { ($0.title ?? $0.displayTitle).localizedCaseInsensitiveCompare($1.title ?? $1.displayTitle) == .orderedDescending }
+            filtered.sort {
+                ($0.title ?? $0.displayTitle).localizedCaseInsensitiveCompare(
+                    $1.title ?? $1.displayTitle) == .orderedDescending
+            }
         case "modified":
             filtered.sort { $0.updatedAt > $1.updatedAt }
-        default: // "date_newest"
-            filtered.sort { $0.updatedAt < $1.updatedAt } // Newest first = descending date
+        default:  // "date_newest"
+            filtered.sort { $0.updatedAt < $1.updatedAt }  // Newest first = descending date
         }
         
         notes = filtered
@@ -599,7 +607,9 @@ struct NotesView: View {
                 // This note has pending changes - use the local version from allNotes if available
                 if let localNote = allNotes.first(where: { $0.id == fetchedNote.id }) {
                     mergedNotes.append(localNote)
-                } else if let payload = SyncQueueManager.shared.getPendingNotePayload(for: fetchedNote.id) {
+                } else if let payload = SyncQueueManager.shared.getPendingNotePayload(
+                    for: fetchedNote.id)
+                {
                     // Reconstruct from payload if not in allNotes
                     let note = NoteItem(
                         title: payload.title ?? "",
@@ -699,9 +709,9 @@ struct NotesView: View {
         if trimmedQuery.count < 3 {
             // Local search for short queries
             notes = allNotes.filter { note in
-                note.displayTitle.localizedCaseInsensitiveContains(trimmedQuery) ||
-                note.content.localizedCaseInsensitiveContains(trimmedQuery) ||
-                note.tags.contains { tag in
+                note.displayTitle.localizedCaseInsensitiveContains(trimmedQuery)
+                || note.content.localizedCaseInsensitiveContains(trimmedQuery)
+                || note.tags.contains { tag in
                     tag.localizedCaseInsensitiveContains(trimmedQuery)
                 }
             }
@@ -718,7 +728,7 @@ struct NotesView: View {
         
         Task {
             // Add a small delay to debounce rapid typing
-            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
+            try? await Task.sleep(nanoseconds: 300_000_000)  // 300ms
             
             // Check if search text is still the same (user hasn't typed more)
             guard searchText.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedQuery else {
@@ -726,11 +736,14 @@ struct NotesView: View {
             }
             
             do {
-                let searchResults = try await APIService.shared.searchNotes(query: trimmedQuery, userId: user.id)
+                let searchResults = try await APIService.shared.searchNotes(
+                    query: trimmedQuery, userId: user.id)
                 
                 await MainActor.run {
                     // Only update if this is still the current search
-                    if self.searchText.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedQuery {
+                    if self.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        == trimmedQuery
+                    {
                         self.notes = searchResults
                     }
                     self.isSearching = false
@@ -739,9 +752,9 @@ struct NotesView: View {
                 await MainActor.run {
                     // Fall back to local search on API error
                     self.notes = self.allNotes.filter { note in
-                        note.displayTitle.localizedCaseInsensitiveContains(trimmedQuery) ||
-                        note.content.localizedCaseInsensitiveContains(trimmedQuery) ||
-                        note.tags.contains { tag in
+                        note.displayTitle.localizedCaseInsensitiveContains(trimmedQuery)
+                        || note.content.localizedCaseInsensitiveContains(trimmedQuery)
+                        || note.tags.contains { tag in
                             tag.localizedCaseInsensitiveContains(trimmedQuery)
                         }
                     }

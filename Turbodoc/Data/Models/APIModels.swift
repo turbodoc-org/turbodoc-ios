@@ -32,7 +32,8 @@ struct APIBookmarkResponse: Codable {
     let is_favorite: Bool?
     
     enum CodingKeys: String, CodingKey {
-        case id, user_id, title, url, time_added, tags, status, created_at, updated_at, ogImage, is_favorite
+        case id, user_id, title, url, time_added, tags, status, created_at, updated_at, ogImage,
+             is_favorite
     }
     
     var tagsList: [String] {
@@ -43,7 +44,7 @@ struct APIBookmarkResponse: Codable {
         let bookmark = BookmarkItem(
             title: title,
             url: url,
-            contentType: .link, // Default to link, can be enhanced later
+            contentType: .link,  // Default to link, can be enhanced later
             userId: user_id
         )
         
@@ -215,7 +216,6 @@ struct APINoteCreateResponse: Codable {
 struct APINoteUpdateResponse: Codable {
     let data: APINoteResponse
 }
-
 
 // Helper struct to handle tags field that can be either a string or array
 struct TagsContainer: Codable {

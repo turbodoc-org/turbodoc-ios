@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SignUpView: View {
-    @StateObject private var authService = AuthenticationService()
+    @EnvironmentObject var authService: AuthenticationService
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
@@ -122,8 +122,17 @@ struct SignUpView: View {
     private func signUp() {
         Task {
             do {
-                try await authService.signUp(email: email, password: password)
-                dismiss()
+                let outcome = try await authService.signUp(email: email, password: password)
+                switch outcome {
+                case .sessionConfirmed:
+                    // Authenticated via environment object → RootView routes on.
+                    dismiss()
+                case .emailVerificationRequired:
+                    // Dismiss the signup sheet; the SignInView reads
+                    // `authService.pendingVerificationEmail` and presents the
+                    // EmailVerificationView to make verification explicit.
+                    dismiss()
+                }
             } catch {
                 // Error is handled in AuthenticationService
             }

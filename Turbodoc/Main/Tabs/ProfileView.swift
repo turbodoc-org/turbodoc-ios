@@ -8,7 +8,7 @@ struct ProfileView: View {
     @State private var memberSince: Date?
     @State private var isLoadingStats = false
     @State private var statsErrorMessage: String?
-
+    
     var body: some View {
         NavigationView {
             ScrollView {
@@ -30,7 +30,7 @@ struct ProfileView: View {
                 if stats == nil { fetchStats() }
             }
             .alert("Sign Out", isPresented: $showingSignOutAlert) {
-                Button("Cancel", role: .cancel) { }
+                Button("Cancel", role: .cancel) {}
                 Button("Sign Out", role: .destructive) {
                     signOut()
                 }
@@ -42,27 +42,27 @@ struct ProfileView: View {
             }
         }
     }
-
+    
     // MARK: - Header
-
+    
     private var profileHeader: some View {
         VStack(spacing: 16) {
             ZStack {
                 Circle()
                     .fill(Color.blue.opacity(0.1))
                     .frame(width: 100, height: 100)
-
+                
                 Image(systemName: "person.fill")
                     .font(.system(size: 40))
                     .foregroundColor(.blue)
             }
-
+            
             VStack(spacing: 8) {
                 if let user = authService.currentUser {
                     Text(user.name ?? user.email.components(separatedBy: "@").first ?? "User")
                         .font(.title2)
                         .fontWeight(.semibold)
-
+                    
                     Text(user.email)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -76,9 +76,9 @@ struct ProfileView: View {
         .padding(.top, 20)
         .frame(maxWidth: .infinity)
     }
-
+    
     // MARK: - Stats
-
+    
     private var statsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -94,7 +94,7 @@ struct ProfileView: View {
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 8)
-
+            
             LazyVGrid(
                 columns: [
                     GridItem(.flexible(), spacing: 12),
@@ -128,7 +128,7 @@ struct ProfileView: View {
                 )
             }
             .padding(.horizontal, 20)
-
+            
             if let statsErrorMessage = statsErrorMessage, stats == nil {
                 Text(statsErrorMessage)
                     .font(.caption)
@@ -138,9 +138,9 @@ struct ProfileView: View {
             }
         }
     }
-
+    
     // MARK: - Account
-
+    
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -152,7 +152,7 @@ struct ProfileView: View {
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 8)
-
+            
             VStack(spacing: 0) {
                 SettingsRow(
                     icon: "calendar",
@@ -167,7 +167,7 @@ struct ProfileView: View {
         }
         .padding(.horizontal, 20)
     }
-
+    
     private var memberSinceFormatted: String {
         if let date = memberSince {
             return date.formatted(date: .abbreviated, time: .omitted)
@@ -177,9 +177,9 @@ struct ProfileView: View {
         }
         return "—"
     }
-
+    
     // MARK: - Support
-
+    
     private var supportSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -191,7 +191,7 @@ struct ProfileView: View {
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 8)
-
+            
             VStack(spacing: 0) {
                 SettingsRow(
                     icon: "info.circle",
@@ -208,9 +208,9 @@ struct ProfileView: View {
         }
         .padding(.horizontal, 20)
     }
-
+    
     // MARK: - Sign Out
-
+    
     private var signOutButton: some View {
         Button {
             showingSignOutAlert = true
@@ -229,9 +229,9 @@ struct ProfileView: View {
         }
         .padding(.horizontal, 20)
     }
-
+    
     // MARK: - Actions
-
+    
     private func fetchStats() {
         guard let userId = authService.currentUser?.id else { return }
         isLoadingStats = true
@@ -252,7 +252,7 @@ struct ProfileView: View {
             }
         }
     }
-
+    
     private func parseISODate(_ string: String?) -> Date? {
         guard let string = string else { return nil }
         let formatter = ISO8601DateFormatter()
@@ -263,7 +263,7 @@ struct ProfileView: View {
         fallback.timeZone = TimeZone(secondsFromGMT: 0)
         return fallback.date(from: string)
     }
-
+    
     private func signOut() {
         Task {
             do {
@@ -282,7 +282,7 @@ private struct StatCard: View {
     let tint: Color
     let title: String
     let value: Int?
-
+    
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: icon)
@@ -291,13 +291,13 @@ private struct StatCard: View {
                 .frame(width: 36, height: 36)
                 .background(tint.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
-
+            
             Text(value.map { String($0) } ?? "—")
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(.primary)
                 .monospacedDigit()
-
+            
             Text(title)
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -316,14 +316,14 @@ struct SettingsRow: View {
     let subtitle: String
     let showChevron: Bool
     let action: () -> Void
-
+    
     var body: some View {
         Button(action: action) {
             HStack(spacing: 16) {
                 Image(systemName: icon)
                     .foregroundColor(.blue)
                     .frame(width: 24, height: 24)
-
+                
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.body)
@@ -332,9 +332,9 @@ struct SettingsRow: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-
+                
                 Spacer()
-
+                
                 if showChevron {
                     Image(systemName: "chevron.right")
                         .font(.caption)
@@ -350,7 +350,7 @@ struct SettingsRow: View {
 
 struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
-
+    
     var body: some View {
         NavigationView {
             VStack(spacing: 24) {
@@ -358,34 +358,36 @@ struct AboutView: View {
                     // App Icon
                     AppIconView()
                         .frame(width: 80, height: 80)
-
+                    
                     Text("Turbodoc")
                         .font(.title)
                         .fontWeight(.bold)
-
+                    
                     Text("Version 1.0.0")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
                 .padding(.top, 40)
-
+                
                 VStack(alignment: .leading, spacing: 16) {
                     Text("About Turbodoc")
                         .font(.headline)
-
-                    Text("Turbodoc helps you save, organize, and search through your bookmarks across all your devices. Keep your important links, articles, and resources organized in one place.")
-                        .font(.body)
-                        .foregroundColor(.secondary)
+                    
+                    Text(
+                        "Turbodoc helps you save, organize, and search through your bookmarks across all your devices. Keep your important links, articles, and resources organized in one place."
+                    )
+                    .font(.body)
+                    .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 20)
-
+                
                 Spacer()
-
+                
                 VStack(spacing: 12) {
                     Text("© 2024 Turbodoc")
                         .font(.caption)
                         .foregroundColor(.secondary)
-
+                    
                     HStack(spacing: 20) {
                         Button("Privacy Policy") {
                             if let url = URL(string: "https://turbodoc.ai/privacy") {
@@ -393,7 +395,7 @@ struct AboutView: View {
                             }
                         }
                         .font(.caption)
-
+                        
                         Button("Terms of Service") {
                             if let url = URL(string: "https://turbodoc.ai/terms") {
                                 UIApplication.shared.open(url)
@@ -423,7 +425,8 @@ struct AppIconView: View {
            let primaryIcon = icons["CFBundlePrimaryIcon"] as? [String: Any],
            let iconFiles = primaryIcon["CFBundleIconFiles"] as? [String],
            let lastIcon = iconFiles.last,
-           let image = UIImage(named: lastIcon) {
+           let image = UIImage(named: lastIcon)
+        {
             Image(uiImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -439,7 +442,7 @@ struct AppIconView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color.blue)
-
+                
                 Image(systemName: "bookmark")
                     .font(.system(size: 40, weight: .medium))
                     .foregroundColor(.white)
