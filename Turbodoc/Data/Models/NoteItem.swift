@@ -55,6 +55,22 @@ class NoteItem {
     func updateTimestamp() {
         self.updatedAt = Date()
     }
+
+    func copyForSaving() -> NoteItem {
+        let copy = NoteItem(
+            title: title,
+            content: content,
+            tags: tags,
+            userId: userId,
+            isFavorite: isFavorite,
+            version: version
+        )
+        copy.id = id
+        copy.createdAt = createdAt
+        copy.updatedAt = updatedAt
+        copy.syncedAt = syncedAt
+        return copy
+    }
 }
 
 // MARK: - Identifiable conformance for SwiftUI

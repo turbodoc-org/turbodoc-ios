@@ -1,20 +1,33 @@
 import SwiftUI
 
+enum NoteSaveOutcome {
+    case saved
+    case queued
+    case failed
+}
+
 struct EditNoteView: View {
     @State private var note: NoteItem
     @State private var originalContent: String
     @State private var originalTitle: String?
-    @State private var saveTimer: Timer?
-    @State private var isAutoSaving: Bool = false
+    @State private var debounceTask: Task<Void, Never>?
+    @State private var isSaving = false
+    @State private var saveStatus: SaveStatus = .saved
     @State private var showingDeleteConfirmation: Bool = false
+    @State private var didDelete = false
     
-    let onSave: (NoteItem) -> Void
+    let onSave: (NoteItem) async -> NoteSaveOutcome
     let onFinish: () -> Void
     let onDelete: (NoteItem) -> Void
     
     @Environment(\.dismiss) private var dismiss
     
-    init(note: NoteItem, onSave: @escaping (NoteItem) -> Void, onFinish: @escaping () -> Void, onDelete: @escaping (NoteItem) -> Void) {
+    init(
+        note: NoteItem,
+        onSave: @escaping (NoteItem) async -> NoteSaveOutcome,
+        onFinish: @escaping () -> Void,
+        onDelete: @escaping (NoteItem) -> Void
+    ) {
         self._note = State(initialValue: note)
         self._originalContent = State(initialValue: note.content)
         self._originalTitle = State(initialValue: note.title)
@@ -42,15 +55,15 @@ struct EditNoteView: View {
             
             Divider()
             
-            // Markdown editor
-            MarkdownEditor(
-                text: $note.content,
-                disableMarkdown: containsEmojis(note.content)
-            )
-            .id("markdown-editor-\(note.id)-\(containsEmojis(note.content))")
+            MarkdownEditor(text: $note.content)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 16)
-            .padding(.vertical, 16)
+            .overlay(alignment: .topTrailing) {
+                saveStatusLabel
+                    .padding(.top, 8)
+                    .padding(.trailing, 20)
+                    .allowsHitTesting(false)
+            }
             .onChange(of: note.content) {
                 scheduleAutoSave()
             }
@@ -74,6 +87,8 @@ struct EditNoteView: View {
         .alert("Delete Note", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
+                didDelete = true
+                debounceTask?.cancel()
                 onDelete(note)
                 dismiss()
             }
@@ -81,53 +96,103 @@ struct EditNoteView: View {
             Text("Are you sure you want to delete \"\(note.displayTitle)\"? This action cannot be undone.")
         }
         .onDisappear {
-            finishEditing()
-            saveTimer?.invalidate()
+            debounceTask?.cancel()
+            guard !didDelete else { return }
+            Task {
+                await saveIfNeeded()
+                onFinish()
+            }
         }
     }
     
     private func scheduleAutoSave() {
-        saveTimer?.invalidate()
-        saveTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { _ in
-            saveIfNeeded()
+        saveStatus = .unsaved
+        debounceTask?.cancel()
+        debounceTask = Task {
+            do {
+                try await Task.sleep(for: .seconds(1.2))
+            } catch {
+                return
+            }
+            debounceTask = nil
+            await saveIfNeeded()
         }
     }
     
-    private func saveIfNeeded() {
+    @MainActor
+    private func saveIfNeeded() async {
         let hasChanges = note.content != originalContent || note.title != originalTitle
-        
-        if hasChanges {
-            isAutoSaving = true
-            note.updateTimestamp()
-            onSave(note)
-            originalContent = note.content
-            originalTitle = note.title
-            
-            // Hide saving indicator after a delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                isAutoSaving = false
-            }
+        guard hasChanges, !isSaving else { return }
+
+        isSaving = true
+        saveStatus = .saving
+
+        let snapshot = note.copyForSaving()
+        snapshot.updateTimestamp()
+        let outcome = await onSave(snapshot)
+
+        switch outcome {
+        case .saved:
+            originalContent = snapshot.content
+            originalTitle = snapshot.title
+            saveStatus = .saved
+        case .queued:
+            originalContent = snapshot.content
+            originalTitle = snapshot.title
+            saveStatus = .offline
+        case .failed:
+            saveStatus = .failed
+        }
+        isSaving = false
+
+        if note.content != originalContent || note.title != originalTitle {
+            await saveIfNeeded()
         }
     }
-    
-    private func finishEditing() {
-        saveIfNeeded()
-        onFinish()
-    }
-    
-    // MARK: - Emoji Detection
-    
-    /// Checks if the text contains emojis that could cause crashes with markdown rendering
-    private func containsEmojis(_ text: String) -> Bool {
-        for scalar in text.unicodeScalars {
-            // Check for actual emoji characters that cause NSTextStorage issues
-            if scalar.properties.isEmoji && scalar.properties.isEmojiPresentation {
-                return true
+
+    @ViewBuilder
+    private var saveStatusLabel: some View {
+        if saveStatus != .saved {
+            HStack(spacing: 5) {
+                if saveStatus == .saving {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else {
+                    Image(systemName: saveStatus.icon)
+                }
+                Text(saveStatus.label)
             }
-            if scalar.properties.isEmojiModifier || scalar.properties.isEmojiModifierBase {
-                return true
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(saveStatus == .failed ? Color.red : Color.secondary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(.regularMaterial, in: Capsule())
+        }
+    }
+
+    private enum SaveStatus: Equatable {
+        case saved
+        case unsaved
+        case saving
+        case offline
+        case failed
+
+        var label: String {
+            switch self {
+            case .saved: return "Saved"
+            case .unsaved: return "Unsaved"
+            case .saving: return "Saving"
+            case .offline: return "Saved offline"
+            case .failed: return "Save failed"
             }
         }
-        return false
+
+        var icon: String {
+            switch self {
+            case .offline: return "icloud.slash"
+            case .failed: return "exclamationmark.triangle.fill"
+            default: return "circle"
+            }
+        }
     }
 }

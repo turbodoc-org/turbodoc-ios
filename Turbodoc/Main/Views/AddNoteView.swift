@@ -8,10 +8,15 @@ struct AddNoteView: View {
     let onSave: (NoteItem) -> Void
     
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject var authService: AuthenticationService
+
+    private var editorSurface: Color {
+        colorScheme == .dark ? .black : .white
+    }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 // Title input with clean design
                 VStack(alignment: .leading, spacing: 8) {
@@ -28,10 +33,13 @@ struct AddNoteView: View {
                 MarkdownEditor(text: $content)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 16)
+                    .background(editorSurface)
             }
+            .background(editorSurface.ignoresSafeArea())
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(editorSurface, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
@@ -47,6 +55,8 @@ struct AddNoteView: View {
                 }
             }
         }
+        .background(editorSurface.ignoresSafeArea())
+        .presentationBackground(editorSurface)
     }
     
     private func finishNote() {
