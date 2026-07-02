@@ -41,3 +41,8 @@ fastlane/test_output
 # Local
 /prds
 CLAUDE.md
+
+# Web editor build dependencies
+EditorWeb/node_modules/
+EditorWeb/test-results/
+EditorWeb/playwright-report/

@@ -1,0 +1,161 @@
+:root {
+  color-scheme: light dark;
+  --page: #ffffff;
+  --ink: #17191d;
+  --muted: #757b86;
+  --accent: #1677ff;
+  --code: #f2f4f7;
+  --quote: #dce7f8;
+  --selection: rgba(22, 119, 255, 0.18);
+}
+
+:root[data-appearance='dark'] {
+  --page: #000000;
+  --ink: #f2f3f5;
+  --muted: #9298a3;
+  --accent: #68a9ff;
+  --code: #181a1f;
+  --quote: #273448;
+  --selection: rgba(104, 169, 255, 0.24);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#editor {
+  min-height: 100%;
+  margin: 0;
+  background: var(--page);
+}
+
+body {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: ui-rounded, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.58;
+  -webkit-text-size-adjust: 100%;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+.milkdown {
+  min-height: 100vh;
+  background: transparent !important;
+  color: var(--ink) !important;
+}
+
+.milkdown .ProseMirror {
+  min-height: 100vh;
+  padding: 14px 4px 42vh;
+  caret-color: var(--accent);
+  outline: none;
+}
+
+.milkdown .ProseMirror > :first-child {
+  margin-top: 0;
+}
+
+.milkdown .ProseMirror p {
+  margin: 0.52em 0;
+}
+
+.milkdown .ProseMirror h1,
+.milkdown .ProseMirror h2,
+.milkdown .ProseMirror h3,
+.milkdown .ProseMirror h4,
+.milkdown .ProseMirror h5,
+.milkdown .ProseMirror h6 {
+  color: var(--ink);
+  font-family: ui-rounded, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  letter-spacing: -0.025em;
+  line-height: 1.18;
+  margin: 0.9em 0 0.36em;
+}
+
+.milkdown .ProseMirror h1 {
+  font-size: 2rem;
+  font-weight: 760;
+}
+
+.milkdown .ProseMirror h2 {
+  font-size: 1.62rem;
+  font-weight: 730;
+}
+
+.milkdown .ProseMirror h3 {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.milkdown .ProseMirror blockquote {
+  border-left: 3px solid var(--quote);
+  color: var(--muted);
+  margin-left: 0;
+  padding-left: 14px;
+}
+
+.milkdown .ProseMirror code {
+  background: var(--code);
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  padding: 0.12em 0.32em;
+}
+
+.milkdown .ProseMirror pre {
+  background: var(--code);
+  border-radius: 12px;
+  overflow-x: auto;
+  padding: 14px;
+}
+
+.milkdown .ProseMirror pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.milkdown .ProseMirror a {
+  color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.milkdown .ProseMirror ul,
+.milkdown .ProseMirror ol {
+  margin-block: 0.36em;
+  padding-left: 1.45em;
+}
+
+.milkdown .ProseMirror li {
+  margin-block: 0;
+}
+
+.milkdown .ProseMirror .milkdown-list-item-block .content-dom > p {
+  line-height: 1.4;
+  margin-block: 0;
+  min-height: 1.4em;
+  padding-block: 0;
+}
+
+.milkdown .ProseMirror .milkdown-list-item-block .label-wrapper,
+.milkdown .ProseMirror .milkdown-list-item-block .label-wrapper > .label {
+  height: 24px;
+  padding-block: 0;
+}
+
+.milkdown .ProseMirror .placeholder::before {
+  color: var(--muted);
+}
+
+.milkdown .milkdown-toolbar,
+.milkdown .milkdown-link-preview,
+.milkdown .milkdown-link-edit {
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
