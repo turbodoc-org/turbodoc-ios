@@ -177,7 +177,9 @@ struct EmailVerificationView: View {
                 }
             } catch {
                 let message = error.localizedDescription
-                print("❌ resendVerificationEmail failed: \(error)")
+                AppLogger.authentication.error(
+                    "Resend verification email failed: \(error.localizedDescription, privacy: .public)"
+                )
                 await MainActor.run {
                     isResending = false
                     resendResult = "Failed: \(message)"

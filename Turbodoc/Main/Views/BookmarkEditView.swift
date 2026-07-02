@@ -209,6 +209,6 @@ extension String {
     sampleBookmark.status = .unread
     
     return BookmarkEditView(bookmark: sampleBookmark) { updatedBookmark in
-        print("Saved: \(updatedBookmark.title)")
+        AppLogger.notes.info("Bookmark edit was saved")
     }
 }

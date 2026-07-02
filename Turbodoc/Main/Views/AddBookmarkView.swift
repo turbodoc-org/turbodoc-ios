@@ -137,6 +137,6 @@ struct QuickAddButton: View {
 
 #Preview {
     AddBookmarkView { url, title, tags in
-        print("Would save: \(url) with title: \(title ?? "nil") and tags: \(tags)")
+        AppLogger.notes.debug("Bookmark form validation completed")
     }
 }

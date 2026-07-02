@@ -56,6 +56,8 @@
 		F3F0CD182E3A591F008737FE /* Exceptions for "Turbodoc" folder in "Turbodoc" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Configuration/Debug.xcconfig,
+				Configuration/Release.xcconfig,
 				Info.plist,
 			);
 			target = F373AE4A2E279E2B003A9876 /* Turbodoc */;

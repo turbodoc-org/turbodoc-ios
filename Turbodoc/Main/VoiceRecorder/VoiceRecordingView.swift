@@ -260,6 +260,6 @@ struct WaveformView: View {
 
 #Preview {
     VoiceRecordingView(onSave: { text in
-        print("Saved: \(text)")
+        AppLogger.notes.info("Voice transcription was added to a note")
     })
 }

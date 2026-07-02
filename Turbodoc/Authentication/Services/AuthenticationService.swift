@@ -52,6 +52,8 @@ class AuthenticationService: ObservableObject {
         do {
             let response = try await supabaseClient.auth.signIn(email: email, password: password)
             let user = User(id: response.user.id.uuidString, email: response.user.email ?? email)
+            user.createdAt = response.user.createdAt
+            user.updatedAt = response.user.updatedAt
 
             currentUser = user
             authenticationStatus = .authenticated
@@ -60,9 +62,12 @@ class AuthenticationService: ObservableObject {
             saveAuthTokenToSharedStorage(response.accessToken)
 
         } catch {
+            AppLogger.authentication.error(
+                "Sign in failed: \(error.localizedDescription, privacy: .public)"
+            )
             // Email verification is handled by the verification sheet, so only
             // genuine credential failures should appear as inline errors.
-            let message = (error as? Error)?.localizedDescription ?? ""
+            let message = error.localizedDescription
             if message.lowercased().contains("email not confirmed") {
                 pendingVerificationEmail = email
             } else {
@@ -87,6 +92,8 @@ class AuthenticationService: ObservableObject {
             if let token = response.session?.accessToken {
                 let user = User(
                     id: response.user.id.uuidString, email: response.user.email ?? email)
+                user.createdAt = response.user.createdAt
+                user.updatedAt = response.user.updatedAt
                 currentUser = user
                 authenticationStatus = .authenticated
                 authToken = token
@@ -104,6 +111,9 @@ class AuthenticationService: ObservableObject {
                 outcome = .emailVerificationRequired
             }
         } catch {
+            AppLogger.authentication.error(
+                "Sign up failed: \(error.localizedDescription, privacy: .public)"
+            )
             // Surface the real underlying message so the user (and debugging
             // via the Xcode console) can see what actually went wrong instead
             // of a generic "Failed to create account" string.
@@ -136,6 +146,9 @@ class AuthenticationService: ObservableObject {
             clearAuthTokenFromSharedStorage()
 
         } catch {
+            AppLogger.authentication.error(
+                "Sign out failed: \(error.localizedDescription, privacy: .public)"
+            )
             errorMessage = "Failed to sign out"
             throw AuthenticationError.networkError
         }
@@ -150,6 +163,9 @@ class AuthenticationService: ObservableObject {
             try await supabaseClient.auth.resetPasswordForEmail(email)
 
         } catch {
+            AppLogger.authentication.error(
+                "Password reset failed: \(error.localizedDescription, privacy: .public)"
+            )
             errorMessage = "Failed to send reset email"
             throw AuthenticationError.networkError
         }
@@ -158,8 +174,14 @@ class AuthenticationService: ObservableObject {
     func getCurrentUser() async throws -> User? {
         do {
             let supabaseUser = try await supabaseClient.auth.user()
-            return User(id: supabaseUser.id.uuidString, email: supabaseUser.email ?? "")
+            let user = User(id: supabaseUser.id.uuidString, email: supabaseUser.email ?? "")
+            user.createdAt = supabaseUser.createdAt
+            user.updatedAt = supabaseUser.updatedAt
+            return user
         } catch {
+            AppLogger.authentication.warning(
+                "Could not refresh current user: \(error.localizedDescription, privacy: .public)"
+            )
             return currentUser
         }
     }
@@ -169,12 +191,15 @@ class AuthenticationService: ObservableObject {
             let session = try await supabaseClient.auth.session
 
             let user = User(id: session.user.id.uuidString, email: session.user.email ?? "")
+            user.createdAt = session.user.createdAt
+            user.updatedAt = session.user.updatedAt
 
             currentUser = user
             authenticationStatus = .authenticated
             authToken = session.accessToken
             saveAuthTokenToSharedStorage(session.accessToken)
         } catch {
+            AppLogger.authentication.info("No authenticated session was restored")
             authenticationStatus = .notAuthenticated
             currentUser = nil
             authToken = nil
@@ -208,7 +233,9 @@ class AuthenticationService: ObservableObject {
             let data = try JSONSerialization.data(withJSONObject: authData)
             try data.write(to: authURL)
         } catch {
-            // Silent error handling
+            AppLogger.authentication.error(
+                "Failed to save shared auth state: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
@@ -227,7 +254,9 @@ class AuthenticationService: ObservableObject {
                 try FileManager.default.removeItem(at: authURL)
             }
         } catch {
-            // Silent error handling
+            AppLogger.authentication.error(
+                "Failed to clear shared auth state: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 }

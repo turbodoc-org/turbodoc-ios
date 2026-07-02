@@ -48,7 +48,10 @@ class APIService {
                 if let cachedResponse: APIBookmarkListResponse = cacheManager.retrieve(forKey: cacheKey, as: APIBookmarkListResponse.self) {
                     return cachedResponse.data.map { $0.toBookmarkItem() }
                 }
-                throw APIError.networkError
+                AppLogger.network.error(
+                    "Bookmark fetch failed with no cache: \(error.localizedDescription, privacy: .public)"
+                )
+                throw error
             }
         } else {
             // Offline - use cache
@@ -219,7 +222,10 @@ class APIService {
                 if let cachedResponse: APINoteListResponse = cacheManager.retrieve(forKey: cacheKey, as: APINoteListResponse.self) {
                     return cachedResponse.data.map { $0.toNoteItem() }
                 }
-                throw APIError.networkError
+                AppLogger.network.error(
+                    "Note fetch failed with no cache: \(error.localizedDescription, privacy: .public)"
+                )
+                throw error
             }
         } else {
             // Offline - use cache

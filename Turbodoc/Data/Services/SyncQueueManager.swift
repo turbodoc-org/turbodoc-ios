@@ -71,7 +71,9 @@ final class SyncQueueManager {
                 }
             }
         } catch {
-            print("❌ SyncQueue: Failed to queue operation: \(error)")
+            AppLogger.sync.error(
+                "Failed to queue operation: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
     
@@ -86,7 +88,7 @@ final class SyncQueueManager {
         )
         
         guard let data = try? JSONEncoder().encode(payload) else {
-            print("❌ SyncQueue: Failed to encode note payload")
+            AppLogger.sync.error("Failed to encode note payload")
             return
         }
         
@@ -110,7 +112,7 @@ final class SyncQueueManager {
         )
         
         guard let data = try? JSONEncoder().encode(payload) else {
-            print("❌ SyncQueue: Failed to encode bookmark payload")
+            AppLogger.sync.error("Failed to encode bookmark payload")
             return
         }
         
@@ -167,7 +169,9 @@ final class SyncQueueManager {
             loadPendingOperationsCount()
             
         } catch {
-            print("❌ SyncQueue: Error processing operations: \(error)")
+            AppLogger.sync.error(
+                "Error processing operations: \(error.localizedDescription, privacy: .public)"
+            )
             lastSyncError = error.localizedDescription
         }
     }
@@ -190,7 +194,9 @@ final class SyncQueueManager {
                     apiOperations.append(apiOp)
                 }
             } catch {
-                print("❌ SyncQueue: Failed to parse payload: \(error)")
+                AppLogger.sync.error(
+                    "Failed to parse queued payload: \(error.localizedDescription, privacy: .public)"
+                )
             }
         }
         
@@ -205,7 +211,7 @@ final class SyncQueueManager {
             urlComponents.path = endpoint
             
             guard let url = urlComponents.url else {
-                print("❌ SyncQueue: Invalid URL")
+                AppLogger.sync.fault("Batch sync URL is invalid")
                 return
             }
             
@@ -225,10 +231,10 @@ final class SyncQueueManager {
             request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
             
             // Perform request
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await URLSession.shared.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ SyncQueue: Invalid response")
+                AppLogger.sync.error("Batch sync returned an invalid response")
                 return
             }
             
@@ -239,7 +245,9 @@ final class SyncQueueManager {
                 }
                 try? context.save()
             } else {
-                print("❌ SyncQueue: Batch sync failed with status \(httpResponse.statusCode)")
+                AppLogger.sync.error(
+                    "Batch sync failed with status \(httpResponse.statusCode, privacy: .public)"
+                )
                 
                 // Mark operations as failed
                 for operation in operations {
@@ -254,7 +262,9 @@ final class SyncQueueManager {
                 try? context.save()
             }
         } catch {
-            print("❌ SyncQueue: Error syncing batch: \(error)")
+            AppLogger.sync.error(
+                "Error syncing batch: \(error.localizedDescription, privacy: .public)"
+            )
             
             // Mark operations as failed
             for operation in operations {
@@ -281,7 +291,9 @@ final class SyncQueueManager {
             
             return Set(noteOperations.compactMap { $0.entityId })
         } catch {
-            print("❌ SyncQueue: Failed to get pending note IDs: \(error)")
+            AppLogger.sync.error(
+                "Failed to load pending note IDs: \(error.localizedDescription, privacy: .public)"
+            )
             return []
         }
     }
@@ -307,7 +319,9 @@ final class SyncQueueManager {
                 return notePayload
             }
         } catch {
-            print("❌ SyncQueue: Failed to get pending note payload: \(error)")
+            AppLogger.sync.error(
+                "Failed to load pending note payload: \(error.localizedDescription, privacy: .public)"
+            )
         }
         
         return nil
@@ -323,7 +337,9 @@ final class SyncQueueManager {
             let operations = try context.fetch(descriptor)
             pendingOperationsCount = operations.count
         } catch {
-            print("❌ SyncQueue: Failed to load pending count: \(error)")
+            AppLogger.sync.error(
+                "Failed to load pending count: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
     
@@ -341,7 +357,9 @@ final class SyncQueueManager {
             try context.save()
             pendingOperationsCount = 0
         } catch {
-            print("❌ SyncQueue: Failed to clear operations: \(error)")
+            AppLogger.sync.error(
+                "Failed to clear operations: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
     
@@ -363,7 +381,9 @@ final class SyncQueueManager {
             
             await processPendingOperations()
         } catch {
-            print("❌ SyncQueue: Failed to retry operations: \(error)")
+            AppLogger.sync.error(
+                "Failed to retry operations: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 }

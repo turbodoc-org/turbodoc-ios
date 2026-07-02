@@ -39,7 +39,9 @@ final class CacheManager {
             enforceCacheLimits()
             
         } catch {
-            print("❌ Cache: Failed to save \(key): \(error)")
+            AppLogger.network.error(
+                "Failed to cache \(key, privacy: .private): \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
     
@@ -59,7 +61,9 @@ final class CacheManager {
             
             return item
         } catch {
-            print("❌ Cache: Failed to retrieve \(key): \(error)")
+            AppLogger.network.error(
+                "Failed to retrieve cache \(key, privacy: .private): \(error.localizedDescription, privacy: .public)"
+            )
             return nil
         }
     }
@@ -71,7 +75,9 @@ final class CacheManager {
             try fileManager.removeItem(at: fileURL)
             calculateCacheSize()
         } catch {
-            print("❌ Cache: Failed to remove \(key): \(error)")
+            AppLogger.network.error(
+                "Failed to remove cache \(key, privacy: .private): \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
     
@@ -86,7 +92,9 @@ final class CacheManager {
             currentCacheSize = 0
             cachedItemsCount = 0
         } catch {
-            print("❌ Cache: Failed to clear cache: \(error)")
+            AppLogger.network.error(
+                "Failed to clear cache: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
@@ -103,7 +111,9 @@ final class CacheManager {
 
             calculateCacheSize()
         } catch {
-            print("❌ Cache: Failed to remove items with prefix \(prefix): \(error)")
+            AppLogger.network.error(
+                "Failed to invalidate cache prefix \(prefix, privacy: .private): \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
     
@@ -129,7 +139,9 @@ final class CacheManager {
                 }
             }
         } catch {
-            print("❌ Cache: Failed to calculate size: \(error)")
+            AppLogger.network.error(
+                "Failed to calculate cache size: \(error.localizedDescription, privacy: .public)"
+            )
         }
         
         currentCacheSize = totalSize
@@ -188,7 +200,9 @@ final class CacheManager {
             
             calculateCacheSize()
         } catch {
-            print("❌ Cache: Failed to evict items: \(error)")
+            AppLogger.network.error(
+                "Failed to evict cache items: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
     

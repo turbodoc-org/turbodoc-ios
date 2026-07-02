@@ -196,6 +196,6 @@ struct ImagePicker: UIViewControllerRepresentable {
 
 #Preview {
     PhotoOCRView(onSave: { text, image in
-        print("Saved: \(text)")
+        AppLogger.notes.info("OCR text was added to a note")
     })
 }
