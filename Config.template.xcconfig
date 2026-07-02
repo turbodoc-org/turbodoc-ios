@@ -1,0 +1,10 @@
+// Copy this file to both:
+//   Turbodoc/Configuration/Debug.xcconfig
+//   Turbodoc/Configuration/Release.xcconfig
+//
+// Keep those destination files untracked. Use the development Supabase project
+// in Debug.xcconfig and the production project in Release.xcconfig.
+
+SLASH = /
+SUPABASE_URL = https:$(SLASH)$(SLASH)your-project.supabase.co
+SUPABASE_ANON_KEY = your-publishable-anon-key

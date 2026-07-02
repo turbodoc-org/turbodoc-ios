@@ -1,240 +1,189 @@
-import Foundation
-import Speech
 import AVFoundation
 import Combine
+import Foundation
+import OSLog
 
+@MainActor
 final class VoiceRecorder: NSObject, ObservableObject {
-    private var audioEngine: AVAudioEngine?
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
-    // Use device locale for automatic language detection, fallback to en-US
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale.current) ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private let logger = Logger(subsystem: "ai.turbodoc.ios", category: "VoiceRecorder")
     private var audioRecorder: AVAudioRecorder?
+    private var recordingTimer: Timer?
+    private var audioLevels: [Float] = []
+    
+    private(set) var audioFileURL: URL?
     
     @Published private(set) var isRecording = false
     @Published private(set) var isPaused = false
-    @Published private(set) var transcribedText = ""
     @Published private(set) var recordingDuration: TimeInterval = 0
     @Published private(set) var authorizationStatus: AuthStatus = .notDetermined
     @Published private(set) var errorMessage: String?
-    
-    private var recordingTimer: Timer?
-    private var audioLevels: [Float] = []
     
     enum AuthStatus {
         case notDetermined
         case authorized
         case denied
-        case restricted
-    }
-    
-    override init() {
-        super.init()
     }
     
     // MARK: - Permissions
     
     func requestAuthorization() async -> Bool {
-        // Request speech recognition authorization
-        let speechStatus = await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status)
-            }
-        }
-        
-        guard speechStatus == .authorized else {
-            await MainActor.run {
-                authorizationStatus = speechStatus == .denied ? .denied : .restricted
-            }
-            return false
-        }
-        
-        // Request microphone authorization
-        let micStatus = await withCheckedContinuation { continuation in
+        let granted = await withCheckedContinuation { continuation in
             AVAudioSession.sharedInstance().requestRecordPermission { granted in
                 continuation.resume(returning: granted)
             }
         }
         
-        guard micStatus else {
-            await MainActor.run {
-                authorizationStatus = .denied
-            }
-            return false
-        }
-        
-        await MainActor.run {
-            authorizationStatus = .authorized
-        }
-        return true
+        authorizationStatus = granted ? .authorized : .denied
+        return granted
     }
     
     // MARK: - Recording Controls
     
     func startRecording() async throws {
+        errorMessage = nil
+        
         if authorizationStatus != .authorized {
-            let granted = await requestAuthorization()
-            guard granted else {
+            guard await requestAuthorization() else {
                 throw RecordingError.unauthorized
             }
         }
         
-        // Cancel any existing task
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        
-        // Configure audio session
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
-        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        try audioSession.setCategory(.record, mode: .default)
+        try audioSession.setActive(true)
         
-        // Create recognition request
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        
-        guard let recognitionRequest = recognitionRequest else {
-            throw RecordingError.recognitionRequestFailed
+        guard audioSession.isInputAvailable else {
+            try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+            throw RecordingError.noAudioInput
         }
         
-        recognitionRequest.shouldReportPartialResults = true
-        recognitionRequest.requiresOnDeviceRecognition = false
+        deleteRecordedAudio()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voice_recording_\(UUID().uuidString).wav")
         
-        // Start audio engine
-        audioEngine = AVAudioEngine()
+        // Linear PCM avoids device-specific AAC encoder negotiation and is
+        // accepted directly by the backend transcription model.
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: 16_000,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsFloatKey: false,
+        ]
         
-        guard let audioEngine = audioEngine else {
-            throw RecordingError.audioEngineFailed
-        }
-        
-        let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-        
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            recognitionRequest.append(buffer)
+        let recorder: AVAudioRecorder
+        do {
+            recorder = try AVAudioRecorder(url: fileURL, settings: settings)
+            recorder.isMeteringEnabled = true
             
-            // Calculate audio level for visualization
-            let level = self.calculateLevel(buffer: buffer)
-            Task { @MainActor in
-                self.audioLevels.append(level)
-                if self.audioLevels.count > 50 {
-                    self.audioLevels.removeFirst()
-                }
-            }
-        }
-        
-        audioEngine.prepare()
-        try audioEngine.start()
-        
-        // Start recognition task
-        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-            guard let self = self else { return }
-            
-            if let result = result {
-                Task { @MainActor in
-                    self.transcribedText = result.bestTranscription.formattedString
-                }
+            guard recorder.prepareToRecord() else {
+                throw RecordingError.preparationFailed
             }
             
-            if error != nil || result?.isFinal == true {
-                audioEngine.stop()
-                inputNode.removeTap(onBus: 0)
-                
-                self.recognitionRequest = nil
-                self.recognitionTask = nil
+            guard recorder.record() else {
+                throw RecordingError.startFailed
+            }
+        } catch {
+            logger.error(
+                """
+                Recording setup failed: \(error.localizedDescription, privacy: .public); \
+                inputAvailable=\(audioSession.isInputAvailable, privacy: .public); \
+                sampleRate=\(audioSession.sampleRate, privacy: .public); \
+                route=\(audioSession.currentRoute.description, privacy: .public)
+                """
+            )
+            try? FileManager.default.removeItem(at: fileURL)
+            try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+            throw error
+        }
+        
+        audioRecorder = recorder
+        audioFileURL = fileURL
+        isRecording = true
+        isPaused = false
+        recordingDuration = 0
+        audioLevels = []
+        errorMessage = nil
+        
+        recordingTimer?.invalidate()
+        recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.updateRecordingState()
             }
         }
-        
-        await MainActor.run {
-            isRecording = true
-            isPaused = false
-            recordingDuration = 0
-        }
-        
-        // Start timer on main thread
-        await MainActor.run {
-            recordingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                guard let self = self, self.isRecording, !self.isPaused else { return }
-                Task { @MainActor in
-                    self.recordingDuration += 1
-                }
-            }
-        }
-        
-        print("🎤 Voice recording started")
     }
     
     func stopRecording() {
-        audioEngine?.stop()
-        audioEngine?.inputNode.removeTap(onBus: 0)
-        recognitionRequest?.endAudio()
+        audioRecorder?.stop()
+        audioRecorder = nil
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        isRecording = false
+        isPaused = false
         
-        Task { @MainActor in
-            isRecording = false
-            isPaused = false
-            recordingTimer?.invalidate()
-            recordingTimer = nil
-        }
-        
-        print("🎤 Voice recording stopped")
+        try? AVAudioSession.sharedInstance().setActive(
+            false,
+            options: .notifyOthersOnDeactivation
+        )
     }
     
     func pauseRecording() {
-        guard isRecording else { return }
-        Task { @MainActor in
-            isPaused = true
-        }
-        audioEngine?.pause()
-        print("⏸️ Voice recording paused")
+        guard isRecording, !isPaused else { return }
+        audioRecorder?.pause()
+        isPaused = true
     }
     
     func resumeRecording() {
         guard isRecording, isPaused else { return }
-        Task { @MainActor in
-            isPaused = false
+        
+        guard audioRecorder?.record() == true else {
+            errorMessage = RecordingError.startFailed.localizedDescription
+            return
         }
         
-        do {
-            try audioEngine?.start()
-            print("▶️ Voice recording resumed")
-        } catch {
-            Task { @MainActor in
-                errorMessage = "Failed to resume recording: \(error.localizedDescription)"
-            }
-        }
+        isPaused = false
     }
     
     func reset() {
         stopRecording()
-        Task { @MainActor in
-            transcribedText = ""
-            recordingDuration = 0
-            audioLevels = []
-            errorMessage = nil
-        }
+        deleteRecordedAudio()
+        recordingDuration = 0
+        audioLevels = []
+        errorMessage = nil
     }
     
-    // MARK: - Audio Level Calculation
-    
-    private func calculateLevel(buffer: AVAudioPCMBuffer) -> Float {
-        guard let channelData = buffer.floatChannelData else { return 0 }
+    /// Removes the current temporary recording after it is saved or discarded.
+    func deleteRecordedAudio() {
+        audioRecorder?.stop()
+        audioRecorder = nil
         
-        let channelDataValue = channelData.pointee
-        let channelDataValueArray = stride(from: 0, to: Int(buffer.frameLength), by: buffer.stride)
-            .map { channelDataValue[$0] }
-        
-        let rms = sqrt(channelDataValueArray.map { $0 * $0 }.reduce(0, +) / Float(buffer.frameLength))
-        let avgPower = 20 * log10(rms)
-        let normalizedPower = max(0, (avgPower + 60) / 60) // Normalize to 0-1
-        
-        return normalizedPower
+        guard let url = audioFileURL else { return }
+        try? FileManager.default.removeItem(at: url)
+        audioFileURL = nil
     }
     
     func getAudioLevels() -> [Float] {
-        return audioLevels
+        audioLevels
     }
     
     func setError(_ message: String) {
-        Task { @MainActor in
-            errorMessage = message
+        errorMessage = message
+    }
+    
+    private func updateRecordingState() {
+        guard let audioRecorder, isRecording else { return }
+        
+        recordingDuration = audioRecorder.currentTime
+        guard !isPaused else { return }
+        
+        audioRecorder.updateMeters()
+        let averagePower = audioRecorder.averagePower(forChannel: 0)
+        let normalizedPower = max(0, min(1, (averagePower + 60) / 60))
+        audioLevels.append(normalizedPower)
+        
+        if audioLevels.count > 50 {
+            audioLevels.removeFirst(audioLevels.count - 50)
         }
     }
     
@@ -242,17 +191,20 @@ final class VoiceRecorder: NSObject, ObservableObject {
     
     enum RecordingError: LocalizedError {
         case unauthorized
-        case recognitionRequestFailed
-        case audioEngineFailed
+        case noAudioInput
+        case preparationFailed
+        case startFailed
         
         var errorDescription: String? {
             switch self {
             case .unauthorized:
-                return "Microphone or speech recognition permission denied"
-            case .recognitionRequestFailed:
-                return "Failed to create speech recognition request"
-            case .audioEngineFailed:
-                return "Failed to initialize audio engine"
+                return "Microphone permission is required to record a voice note."
+            case .noAudioInput:
+                return "No microphone input is available. If you're using the Simulator, enable a microphone input or try a physical device."
+            case .preparationFailed:
+                return "The audio file couldn't be prepared for recording."
+            case .startFailed:
+                return "iOS couldn't start the microphone. Check that another app or call isn't using it, then try again."
             }
         }
     }

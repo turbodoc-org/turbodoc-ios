@@ -7,6 +7,9 @@ struct VoiceRecordingView: View {
     let onSave: (String) -> Void
     
     @State private var showingError = false
+    @State private var transcriptionErrorMessage: String?
+    @State private var isTranscribing = false
+    @State private var hasSavedOnce = false
     
     var body: some View {
         NavigationView {
@@ -26,11 +29,31 @@ struct VoiceRecordingView: View {
                         .frame(height: 100)
                         .padding(.horizontal)
                     
-                    // Transcribed text
+                    // Recording / transcription status
                     ScrollView {
-                        Text(recorder.transcribedText.isEmpty ? "Start speaking..." : recorder.transcribedText)
+                        if isTranscribing {
+                            VStack(spacing: 12) {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .blue))
+                                Text("Transcribing in the spoken language with AI…")
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color(.secondarySystemBackground))
+                            )
+                        } else {
+                            Text(
+                                recorder.isRecording
+                                ? "Recording… Tap the checkmark when you're finished."
+                                : "Start recording, then AI will detect the spoken language and transcribe your note."
+                            )
                             .font(.body)
-                            .foregroundColor(recorder.transcribedText.isEmpty ? .secondary : .primary)
+                            .foregroundColor(.secondary)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding()
@@ -38,6 +61,7 @@ struct VoiceRecordingView: View {
                                 RoundedRectangle(cornerRadius: 12)
                                     .fill(Color(.secondarySystemBackground))
                             )
+                        }
                     }
                     .frame(maxHeight: 200)
                     .padding(.horizontal)
@@ -58,6 +82,8 @@ struct VoiceRecordingView: View {
                                 .background(Color.red)
                                 .clipShape(Circle())
                         }
+                        .disabled(isTranscribing)
+                        .opacity(isTranscribing ? 0.5 : 1.0)
                         
                         // Record/Pause/Resume button
                         Button(action: {
@@ -76,14 +102,12 @@ struct VoiceRecordingView: View {
                                 .background(recorder.isRecording ? Color.orange : Color.blue)
                                 .clipShape(Circle())
                         }
+                        .disabled(isTranscribing)
+                        .opacity(isTranscribing ? 0.5 : 1.0)
                         
                         // Stop and Save button
                         Button(action: {
-                            recorder.stopRecording()
-                            if !recorder.transcribedText.isEmpty {
-                                onSave(recorder.transcribedText)
-                            }
-                            dismiss()
+                            saveTranscription()
                         }) {
                             Image(systemName: "checkmark")
                                 .font(.title2)
@@ -92,8 +116,8 @@ struct VoiceRecordingView: View {
                                 .background(Color.green)
                                 .clipShape(Circle())
                         }
-                        .disabled(!recorder.isRecording || recorder.transcribedText.isEmpty)
-                        .opacity((!recorder.isRecording || recorder.transcribedText.isEmpty) ? 0.5 : 1.0)
+                        .disabled(!canSave)
+                        .opacity(canSave ? 1.0 : 0.5)
                     }
                     .padding(.bottom, 40)
                 }
@@ -107,17 +131,27 @@ struct VoiceRecordingView: View {
                         recorder.reset()
                         dismiss()
                     }
+                    .disabled(isTranscribing)
                 }
             }
             .alert("Recording Error", isPresented: $showingError) {
                 Button("OK", role: .cancel) {}
             } message: {
-                Text(recorder.errorMessage ?? "An error occurred")
+                Text(transcriptionErrorMessage ?? recorder.errorMessage ?? "An error occurred")
             }
             .onChange(of: recorder.errorMessage) { _, newValue in
+                transcriptionErrorMessage = nil
                 showingError = newValue != nil
             }
+            .interactiveDismissDisabled(recorder.isRecording || isTranscribing)
+            .onDisappear {
+                recorder.deleteRecordedAudio()
+            }
         }
+    }
+    
+    private var canSave: Bool {
+        !isTranscribing && (recorder.isRecording || recorder.audioFileURL != nil)
     }
     
     private func startRecording() {
@@ -126,6 +160,64 @@ struct VoiceRecordingView: View {
                 try await recorder.startRecording()
             } catch {
                 recorder.setError(error.localizedDescription)
+            }
+        }
+    }
+    
+    /// Stops the recording and uploads the audio file to the backend for
+    /// multilingual transcription. Whisper auto-detects the spoken language
+    /// and returns the text in that language.
+    private func saveTranscription() {
+        guard !hasSavedOnce else { return }
+        hasSavedOnce = true
+        recorder.stopRecording()
+        
+        guard let audioFileURL = recorder.audioFileURL,
+              let attributes = try? FileManager.default.attributesOfItem(
+                atPath: audioFileURL.path
+              ),
+              let fileSize = attributes[.size] as? NSNumber,
+              fileSize.intValue > 0 else {
+            hasSavedOnce = false
+            transcriptionErrorMessage =
+            "No audio was captured. Start a new recording and try again."
+            showingError = true
+            return
+        }
+        
+        let filename = audioFileURL.lastPathComponent
+        let mimeType = "audio/wav"
+        
+        isTranscribing = true
+        Task {
+            var finalText: String? = nil
+            var transcriptionError: String?
+            do {
+                let text = try await APIService.shared.transcribeAudio(
+                    at: audioFileURL,
+                    filename: filename,
+                    mimeType: mimeType
+                )
+                if !text.isEmpty {
+                    finalText = text
+                }
+            } catch {
+                transcriptionError = error.localizedDescription
+            }
+            
+            await MainActor.run {
+                isTranscribing = false
+                if let finalText {
+                    onSave(finalText)
+                    recorder.deleteRecordedAudio()
+                    dismiss()
+                } else {
+                    hasSavedOnce = false
+                    transcriptionErrorMessage =
+                    transcriptionError
+                    ?? "No speech was detected. Tap the microphone to record again, or tap the checkmark to retry."
+                    showingError = true
+                }
             }
         }
     }

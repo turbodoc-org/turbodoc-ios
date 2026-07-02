@@ -195,8 +195,12 @@ Dependencies are managed through Swift Package Manager:
 
 ### Configuration Files
 
-- `Debug.xcconfig`: Development environment settings
-- `Release.xcconfig`: Production environment settings
+- Copy `Config.template.xcconfig` to
+  `Turbodoc/Configuration/Debug.xcconfig` and
+  `Turbodoc/Configuration/Release.xcconfig`
+- Put development Supabase values in `Debug.xcconfig`
+- Put production Supabase values in `Release.xcconfig`
+- Keep both destination files untracked; the template is safe to commit
 - `SupabaseConfig.swift`: Supabase URL and key configuration
 - `APIConfig.swift`: API endpoint definitions
 

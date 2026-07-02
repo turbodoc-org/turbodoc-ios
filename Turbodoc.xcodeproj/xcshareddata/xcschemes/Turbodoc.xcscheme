@@ -50,18 +50,6 @@
             ReferencedContainer = "container:Turbodoc.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <EnvironmentVariables>
-         <EnvironmentVariable
-            key = "SUPABASE_URL"
-            value = "https://itauvwgtmctneefilcff.supabase.co"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-         <EnvironmentVariable
-            key = "SUPABASE_ANON_KEY"
-            value = "sb_publishable_yIVWfTAF5YQG-HmG2KBqqQ_G1apVgje"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

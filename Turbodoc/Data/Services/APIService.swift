@@ -314,6 +314,27 @@ class APIService {
             throw APIError.networkError
         }
     }
+    
+    // MARK: - Voice Transcription
+    
+    /// Uploads an audio recording to the backend for multilingual transcription
+    /// via Cloudflare Workers AI Whisper. Returns the transcribed text in the
+    /// spoken language (no translation).
+    func transcribeAudio(
+        at fileURL: URL,
+        filename: String = "recording.wav",
+        mimeType: String = "audio/wav"
+    ) async throws -> String {
+        let response = try await networkService.performMultipartUpload(
+            endpoint: APIConfig.Endpoints.notesTranscribe,
+            fieldName: "audio",
+            filename: filename,
+            mimeType: mimeType,
+            fileURL: fileURL,
+            responseType: APITranscriptionResponse.self
+        )
+        return response.text
+    }
 }
 
 // MARK: - Supporting Models
