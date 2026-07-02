@@ -203,7 +203,7 @@ struct NotesView: View {
                 EditNoteView(
                     note: noteToEdit,
                     onSave: { updatedNote in
-                        saveNoteUpdate(updatedNote)
+                        await saveExistingNoteUpdate(updatedNote)
                     },
                     onFinish: {
                         self.noteToEdit = nil
@@ -693,6 +693,44 @@ struct NotesView: View {
                 // Offline - queue operation
                 SyncQueueManager.shared.queueNoteOperation(type: operationType, note: note)
             }
+        }
+    }
+
+    @MainActor
+    private func saveExistingNoteUpdate(_ note: NoteItem) async -> NoteSaveOutcome {
+        if let index = notes.firstIndex(where: { $0.id == note.id }) {
+            notes[index] = note
+        }
+        if let index = allNotes.firstIndex(where: { $0.id == note.id }) {
+            allNotes[index] = note
+        }
+
+        guard NetworkMonitor.shared.isConnected else {
+            SyncQueueManager.shared.queueNoteOperation(type: "update", note: note)
+            AppLogger.notes.notice(
+                "Queued offline note update for \(note.id.uuidString, privacy: .public)"
+            )
+            return .queued
+        }
+
+        do {
+            let savedNote = try await APIService.shared.updateNote(note)
+            if let index = notes.firstIndex(where: { $0.id == note.id }) {
+                notes[index] = savedNote
+            }
+            if let index = allNotes.firstIndex(where: { $0.id == note.id }) {
+                allNotes[index] = savedNote
+            }
+            AppLogger.notes.info(
+                "Saved note \(note.id.uuidString, privacy: .public)"
+            )
+            return .saved
+        } catch {
+            SyncQueueManager.shared.queueNoteOperation(type: "update", note: note)
+            AppLogger.notes.error(
+                "Note update failed and was queued: \(error.localizedDescription, privacy: .public)"
+            )
+            return .queued
         }
     }
     
