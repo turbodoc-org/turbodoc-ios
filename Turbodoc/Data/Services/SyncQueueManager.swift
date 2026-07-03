@@ -277,54 +277,34 @@ final class SyncQueueManager {
     
     // MARK: - Helpers
     
-    func getPendingNoteIds() -> Set<UUID> {
-        guard let context = modelContext else { return [] }
-        
-        do {
-            let descriptor = FetchDescriptor<SyncOperation>()
-            let operations = try context.fetch(descriptor)
-            
-            let noteOperations = operations.filter {
-                $0.entityType == "note" &&
-                ($0.status == "pending" || $0.status == "failed")
-            }
-            
-            return Set(noteOperations.compactMap { $0.entityId })
-        } catch {
-            AppLogger.sync.error(
-                "Failed to load pending note IDs: \(error.localizedDescription, privacy: .public)"
-            )
-            return []
-        }
-    }
-    
-    func getPendingNotePayload(for noteId: UUID) -> NoteOperationPayload? {
-        guard let context = modelContext else { return nil }
+    func getPendingNotePayloads() -> [UUID: NoteOperationPayload] {
+        guard let context = modelContext else { return [:] }
         
         do {
             let descriptor = FetchDescriptor<SyncOperation>(
                 sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
             )
             let operations = try context.fetch(descriptor)
-            
-            let noteOperations = operations.filter {
-                $0.entityType == "note" &&
-                $0.entityId == noteId &&
-                ($0.status == "pending" || $0.status == "failed")
+
+            var payloads: [UUID: NoteOperationPayload] = [:]
+            for operation in operations
+            where operation.entityType == "note"
+                && (operation.status == "pending" || operation.status == "failed") {
+                guard
+                    let id = operation.entityId,
+                    payloads[id] == nil,
+                    let data = operation.payload,
+                    let payload = try? JSONDecoder().decode(NoteOperationPayload.self, from: data)
+                else { continue }
+                payloads[id] = payload
             }
-            
-            if let latestOperation = noteOperations.first,
-               let payload = latestOperation.payload,
-               let notePayload = try? JSONDecoder().decode(NoteOperationPayload.self, from: payload) {
-                return notePayload
-            }
+            return payloads
         } catch {
             AppLogger.sync.error(
-                "Failed to load pending note payload: \(error.localizedDescription, privacy: .public)"
+                "Failed to load pending notes: \(error.localizedDescription, privacy: .public)"
             )
+            return [:]
         }
-        
-        return nil
     }
     
     private func loadPendingOperationsCount() {

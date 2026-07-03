@@ -3,7 +3,7 @@ import Foundation
 class NetworkService {
     static let shared = NetworkService()
     
-    private let session = URLSession.shared
+    private let session: URLSession
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
     
@@ -11,6 +11,11 @@ class NetworkService {
     private var authService: AuthenticationService?
     
     private init() {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 20
+        configuration.timeoutIntervalForResource = 30
+        session = URLSession(configuration: configuration)
+
         // Configure date formatting
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'"

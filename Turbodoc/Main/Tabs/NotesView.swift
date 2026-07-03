@@ -7,7 +7,6 @@ struct NotesView: View {
     @State private var allNotes: [NoteItem] = []
     @State private var searchText = ""
     @State private var isLoading = false
-    @State private var isRefreshing = false
     @State private var isSearching = false
     @State private var errorMessage: String?
     @State private var showingDeleteConfirmation = false
@@ -18,19 +17,14 @@ struct NotesView: View {
     @State private var noteToEdit: NoteItem?
     @State private var isFABExpanded = false
     @Environment(\.scenePhase) private var scenePhase
-    @State private var lastRefreshTime = Date()
+    @State private var lastRefreshTime = Date.distantPast
+    @State private var refreshCoordinator = RefreshCoordinator()
     @AppStorage("notesViewMode") private var viewMode: ViewMode = .grid
     @AppStorage("notesFilterSelection") private var selectedFilter: String = "all"
     @AppStorage("notesSortOrder") private var sortOrder: String = "date_newest"
     
     @State private var isConnected = NetworkMonitor.shared.isConnected
     @State private var pendingOperationsCount = SyncQueueManager.shared.pendingOperationsCount
-    
-    // Grid layout - 2 columns with improved spacing
-    private let columns = [
-        GridItem(.flexible(), spacing: 16),
-        GridItem(.flexible(), spacing: 16),
-    ]
     
     private var filterItems: [FilterPillsBar.FilterItem] {
         let favoriteCount = allNotes.filter { $0.isFavorite }.count
@@ -128,10 +122,7 @@ struct NotesView: View {
             }
             .onChange(of: scenePhase) {
                 if scenePhase == .active && authService.authenticationStatus == .authenticated {
-                    // Always refresh when app becomes active to get latest data
-                    Task {
-                        await refreshNotes()
-                    }
+                    refreshNotesIfNeeded()
                 }
             }
             .onChange(of: authService.authenticationStatus) {
@@ -350,30 +341,39 @@ struct NotesView: View {
     }
     
     private var gridView: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(notes, id: \.id) { note in
-                    NoteCardView(
-                        note: note,
-                        onEdit: { noteToEdit in
-                            self.noteToEdit = noteToEdit
-                        },
-                        onDelete: { noteToDelete in
-                            confirmDeleteNote(noteToDelete)
-                        },
-                        onToggleFavorite: { noteToToggle in
-                            toggleFavorite(noteToToggle)
-                        }
-                    )
+        List {
+            ForEach(Array(stride(from: 0, to: notes.count, by: 2)), id: \.self) { index in
+                HStack(alignment: .top, spacing: 16) {
+                    noteCard(notes[index])
+
+                    if notes.indices.contains(index + 1) {
+                        noteCard(notes[index + 1])
+                    } else {
+                        Color.clear
+                            .frame(maxWidth: .infinity)
+                            .aspectRatio(1, contentMode: .fit)
+                    }
                 }
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 20)
-            .padding(.bottom, 100)  // Space for floating action button
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, 100, for: .scrollContent)
         .refreshable {
             await refreshNotes()
         }
+    }
+
+    private func noteCard(_ note: NoteItem) -> some View {
+        NoteCardView(
+            note: note,
+            onEdit: { noteToEdit = $0 },
+            onDelete: confirmDeleteNote,
+            onToggleFavorite: toggleFavorite
+        )
     }
     
     private var listView: some View {
@@ -397,19 +397,15 @@ struct NotesView: View {
     }
     
     private func refreshNotesIfNeeded() {
-        guard let user = authService.currentUser else {
-            return
-        }
+        guard authService.currentUser != nil else { return }
         
         // Check if we should refresh (first load or if it's been more than 30 seconds since last refresh)
         let timeSinceLastRefresh = Date().timeIntervalSince(lastRefreshTime)
-        let shouldRefresh = notes.isEmpty || timeSinceLastRefresh > 30
+        let shouldRefresh = allNotes.isEmpty || timeSinceLastRefresh > 30
         
         if shouldRefresh {
-            lastRefreshTime = Date()
-            
             // Use loadNotes for initial load, refreshNotes for subsequent refreshes
-            if notes.isEmpty {
+            if allNotes.isEmpty {
                 loadNotes()
             } else {
                 Task {
@@ -454,73 +450,38 @@ struct NotesView: View {
     }
     
     private func loadNotes() {
-        guard let user = authService.currentUser else {
-            return
-        }
-        
-        // Prevent multiple simultaneous loads
-        guard !isLoading && !isRefreshing else { return }
-        
-        isLoading = true
-        errorMessage = nil
-        
         Task {
-            do {
-                // Configure API service with auth service
-                APIService.shared.configure(authService: authService)
-                
-                let fetchedNotes = try await APIService.shared.fetchNotes(userId: user.id)
-                
-                await MainActor.run {
-                    // Merge fetched notes with local pending changes
-                    self.allNotes = self.mergeFetchedNotesWithLocalEdits(fetchedNotes)
-                    self.notes = self.allNotes
-                    self.applyFilter()
-                    self.isLoading = false
-                }
-            } catch {
-                await MainActor.run {
-                    // Only show error if we don't have any notes (no cache)
-                    if self.allNotes.isEmpty {
-                        self.errorMessage = "Failed to load notes: \(error.localizedDescription)"
-                    }
-                    self.isLoading = false
-                }
-            }
+            await reloadNotes(showInitialLoader: true)
         }
     }
     
     private func refreshNotes() async {
-        guard let user = authService.currentUser else {
-            return
-        }
-        
-        // Prevent multiple simultaneous refreshes
-        guard !isRefreshing && !isLoading else { return }
-        
-        isRefreshing = true
-        errorMessage = nil
-        
-        do {
-            // Configure API service with auth service
-            APIService.shared.configure(authService: authService)
-            
-            let fetchedNotes = try await APIService.shared.fetchNotes(userId: user.id)
-            
-            await MainActor.run {
+        await reloadNotes(showInitialLoader: false)
+    }
+
+    @MainActor
+    private func reloadNotes(showInitialLoader: Bool) async {
+        await refreshCoordinator.run {
+            guard let user = authService.currentUser else { return }
+
+            let isInitialLoad = showInitialLoader && allNotes.isEmpty
+            if isInitialLoad { isLoading = true }
+            errorMessage = nil
+            defer { isLoading = false }
+
+            do {
+                APIService.shared.configure(authService: authService)
+                let fetchedNotes = try await APIService.shared.fetchNotes(userId: user.id)
+
                 // Merge fetched notes with local pending changes
-                self.allNotes = self.mergeFetchedNotesWithLocalEdits(fetchedNotes)
-                self.notes = self.allNotes
-                self.applyFilter()
-                self.isRefreshing = false
-            }
-        } catch {
-            await MainActor.run {
+                allNotes = mergeFetchedNotesWithLocalEdits(fetchedNotes)
+                applyFilter()
+                lastRefreshTime = Date()
+            } catch {
                 // Only show error if we have no cached notes
-                if self.allNotes.isEmpty {
-                    self.errorMessage = "Failed to refresh notes: \(error.localizedDescription)"
+                if allNotes.isEmpty {
+                    errorMessage = "Failed to refresh notes: \(error.localizedDescription)"
                 }
-                self.isRefreshing = false
             }
         }
     }
@@ -591,8 +552,8 @@ struct NotesView: View {
     }
     
     private func mergeFetchedNotesWithLocalEdits(_ fetchedNotes: [NoteItem]) -> [NoteItem] {
-        // Get IDs of notes with pending changes
-        let pendingNoteIds = SyncQueueManager.shared.getPendingNoteIds()
+        let pendingPayloads = SyncQueueManager.shared.getPendingNotePayloads()
+        let pendingNoteIds = Set(pendingPayloads.keys)
         
         // If no pending changes, return fetched notes as-is
         guard !pendingNoteIds.isEmpty else {
@@ -607,9 +568,7 @@ struct NotesView: View {
                 // This note has pending changes - use the local version from allNotes if available
                 if let localNote = allNotes.first(where: { $0.id == fetchedNote.id }) {
                     mergedNotes.append(localNote)
-                } else if let payload = SyncQueueManager.shared.getPendingNotePayload(
-                    for: fetchedNote.id)
-                {
+                } else if let payload = pendingPayloads[fetchedNote.id] {
                     // Reconstruct from payload if not in allNotes
                     let note = NoteItem(
                         title: payload.title ?? "",

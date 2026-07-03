@@ -7,7 +7,6 @@ struct HomeView: View {
     @State private var allBookmarks: [BookmarkItem] = []
     @State private var searchText = ""
     @State private var isLoading = false
-    @State private var isRefreshing = false
     @State private var isSearching = false
     @State private var errorMessage: String?
     @State private var showingDeleteConfirmation = false
@@ -15,7 +14,8 @@ struct HomeView: View {
     @State private var showingAddBookmark = false
     @State private var showingFilters = false
     @Environment(\.scenePhase) private var scenePhase
-    @State private var lastRefreshTime = Date()
+    @State private var lastRefreshTime = Date.distantPast
+    @State private var refreshCoordinator = RefreshCoordinator()
     @AppStorage("viewMode") private var viewMode: ViewMode = .grid
     @AppStorage("bookmarksFilter") private var selectedFilter: String = "all"
     
@@ -475,19 +475,15 @@ struct HomeView: View {
     }
     
     private func refreshBookmarksIfNeeded() {
-        guard let user = authService.currentUser else {
-            return
-        }
+        guard authService.currentUser != nil else { return }
         
         // Check if we should refresh (first load or if it's been more than 30 seconds since last refresh)
         let timeSinceLastRefresh = Date().timeIntervalSince(lastRefreshTime)
-        let shouldRefresh = bookmarks.isEmpty || timeSinceLastRefresh > 30
+        let shouldRefresh = allBookmarks.isEmpty || timeSinceLastRefresh > 30
         
         if shouldRefresh {
-            lastRefreshTime = Date()
-            
             // Use loadBookmarks for initial load, refreshBookmarks for subsequent refreshes
-            if bookmarks.isEmpty {
+            if allBookmarks.isEmpty {
                 loadBookmarks()
             } else {
                 Task {
@@ -498,71 +494,36 @@ struct HomeView: View {
     }
     
     private func loadBookmarks() {
-        guard let user = authService.currentUser else {
-            return
-        }
-        
-        // Prevent multiple simultaneous loads
-        guard !isLoading && !isRefreshing else { return }
-        
-        isLoading = true
-        errorMessage = nil
-        
         Task {
-            do {
-                // Configure API service with auth service
-                APIService.shared.configure(authService: authService)
-                
-                let fetchedBookmarks = try await APIService.shared.fetchBookmarks(userId: user.id)
-                
-                await MainActor.run {
-                    self.allBookmarks = fetchedBookmarks
-                    self.extractAvailableTags()
-                    self.applyFilterPills()
-                    self.isLoading = false
-                }
-            } catch {
-                await MainActor.run {
-                    // Only show error if we don't have any bookmarks (no cache)
-                    if self.allBookmarks.isEmpty {
-                        self.errorMessage = "Failed to load bookmarks: \(error.localizedDescription)"
-                    }
-                    self.isLoading = false
-                }
-            }
+            await reloadBookmarks(showInitialLoader: true)
         }
     }
     
     private func refreshBookmarks() async {
-        guard let user = authService.currentUser else {
-            return
-        }
-        
-        // Prevent multiple simultaneous refreshes
-        guard !isRefreshing && !isLoading else { return }
-        
-        isRefreshing = true
-        errorMessage = nil
-        
-        do {
-            // Configure API service with auth service
-            APIService.shared.configure(authService: authService)
-            
-            let fetchedBookmarks = try await APIService.shared.fetchBookmarks(userId: user.id)
-            
-            await MainActor.run {
-                self.allBookmarks = fetchedBookmarks
-                self.extractAvailableTags()
-                self.applyFilterPills()
-                self.isRefreshing = false
-            }
-        } catch {
-            await MainActor.run {
+        await reloadBookmarks(showInitialLoader: false)
+    }
+
+    @MainActor
+    private func reloadBookmarks(showInitialLoader: Bool) async {
+        await refreshCoordinator.run {
+            guard let user = authService.currentUser else { return }
+
+            let isInitialLoad = showInitialLoader && allBookmarks.isEmpty
+            if isInitialLoad { isLoading = true }
+            errorMessage = nil
+            defer { isLoading = false }
+
+            do {
+                APIService.shared.configure(authService: authService)
+                allBookmarks = try await APIService.shared.fetchBookmarks(userId: user.id)
+                extractAvailableTags()
+                applyFilterPills()
+                lastRefreshTime = Date()
+            } catch {
                 // Only show error if we have no cached bookmarks
-                if self.allBookmarks.isEmpty {
-                    self.errorMessage = "Failed to refresh bookmarks: \(error.localizedDescription)"
+                if allBookmarks.isEmpty {
+                    errorMessage = "Failed to refresh bookmarks: \(error.localizedDescription)"
                 }
-                self.isRefreshing = false
             }
         }
     }
