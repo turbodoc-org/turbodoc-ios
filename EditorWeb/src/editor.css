@@ -19,6 +19,18 @@
   --selection: rgba(104, 169, 255, 0.24);
 }
 
+@media (prefers-color-scheme: dark) {
+  :root:not([data-appearance]) {
+    --page: #000000;
+    --ink: #f2f3f5;
+    --muted: #9298a3;
+    --accent: #68a9ff;
+    --code: #181a1f;
+    --quote: #273448;
+    --selection: rgba(104, 169, 255, 0.24);
+  }
+}
+
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;

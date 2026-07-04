@@ -125,13 +125,33 @@ crepe.on((listener) => {
   })
 })
 
-const setMarkdown = (markdown) => {
+const scrollToTop = () => {
+  window.scrollTo(0, 0)
+  document.scrollingElement?.scrollTo(0, 0)
+}
+
+const setMarkdown = (markdown, shouldScrollToTop = false) => {
   const value = typeof markdown === 'string' ? markdown : ''
   if (value === lastMarkdown) return
 
   applyingNativeUpdate = true
   crepe.editor.action(replaceAll(value))
   lastMarkdown = value
+
+  if (shouldScrollToTop) {
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(
+        view.state.tr.setSelection(TextSelection.atStart(view.state.doc))
+      )
+    })
+    scrollToTop()
+    requestAnimationFrame(() => {
+      scrollToTop()
+      requestAnimationFrame(scrollToTop)
+    })
+  }
+
   queueMicrotask(() => {
     applyingNativeUpdate = false
   })

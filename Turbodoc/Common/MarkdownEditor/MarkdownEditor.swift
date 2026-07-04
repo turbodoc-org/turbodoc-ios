@@ -19,12 +19,20 @@ struct MarkdownEditor: UIViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = userContentController
         configuration.allowsInlineMediaPlayback = true
+        configuration.userContentController.addUserScript(
+            WKUserScript(
+                source: """
+                document.documentElement.dataset.appearance = '\(appearanceValue)';
+                """,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        webView.scrollView.backgroundColor = .clear
+        webView.isOpaque = true
+        applyNativeAppearance(to: webView)
         webView.scrollView.keyboardDismissMode = .interactive
         webView.scrollView.contentInsetAdjustmentBehavior = .never
 
@@ -37,6 +45,18 @@ struct MarkdownEditor: UIViewRepresentable {
         context.coordinator.parent = self
         context.coordinator.updateAppearance(colorScheme)
         context.coordinator.updateMarkdownIfNeeded(text)
+    }
+
+    private var appearanceValue: String {
+        colorScheme == .dark ? "dark" : "light"
+    }
+
+    private func applyNativeAppearance(to webView: WKWebView) {
+        let interfaceStyle: UIUserInterfaceStyle = colorScheme == .dark ? .dark : .light
+        let backgroundColor: UIColor = colorScheme == .dark ? .black : .white
+        webView.overrideUserInterfaceStyle = interfaceStyle
+        webView.backgroundColor = backgroundColor
+        webView.scrollView.backgroundColor = backgroundColor
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
@@ -87,11 +107,21 @@ struct MarkdownEditor: UIViewRepresentable {
 
         func updateMarkdownIfNeeded(_ markdown: String) {
             guard isReady, markdown != editorMarkdown else { return }
+            let shouldScrollToTop = editorMarkdown == nil
             editorMarkdown = markdown
-            evaluate("window.turbodocEditor.setMarkdown(\(Self.javaScriptString(markdown)));")
+            evaluate(
+                "window.turbodocEditor.setMarkdown(" +
+                "\(Self.javaScriptString(markdown)), \(shouldScrollToTop));"
+            )
         }
 
         func updateAppearance(_ newAppearance: ColorScheme) {
+            let interfaceStyle: UIUserInterfaceStyle = newAppearance == .dark ? .dark : .light
+            let backgroundColor: UIColor = newAppearance == .dark ? .black : .white
+            webView?.overrideUserInterfaceStyle = interfaceStyle
+            webView?.backgroundColor = backgroundColor
+            webView?.scrollView.backgroundColor = backgroundColor
+
             guard isReady, appearance != newAppearance else { return }
             appearance = newAppearance
             let value = newAppearance == .dark ? "dark" : "light"
