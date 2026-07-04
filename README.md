@@ -222,10 +222,20 @@ Dependencies are managed through Swift Package Manager:
 
 ### TestFlight Distribution
 
-1. Archive the app (⌘+Shift+Return)
-2. Upload to App Store Connect
-3. Configure TestFlight testing
-4. Distribute to internal/external testers
+1. Bump the app version and build number:
+
+   ```bash
+   ./scripts/bump-version.sh
+   ```
+
+   The default is a patch release. You can also pass `minor`, `major`, an exact
+   version such as `2.0`, or `--build-only`. Run the script with `--help` for
+   all options.
+
+2. Archive the app (⌘+Shift+Return)
+3. Upload to App Store Connect
+4. Configure TestFlight testing
+5. Distribute to internal/external testers
 
 ### App Store Release
 
