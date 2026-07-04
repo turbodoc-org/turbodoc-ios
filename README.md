@@ -232,8 +232,25 @@ Dependencies are managed through Swift Package Manager:
    version such as `2.0`, or `--build-only`. Run the script with `--help` for
    all options.
 
-2. Archive the app (⌘+Shift+Return)
-3. Upload to App Store Connect
+2. Build and archive the app with the Release configuration:
+
+   ```bash
+   ./scripts/archive-release.sh
+   ```
+
+   Archives are written to `build/`. To archive and immediately upload the
+   build to App Store Connect, run:
+
+   ```bash
+   ./scripts/archive-release.sh --upload
+   ```
+
+   Upload uses the Apple account configured in Xcode. For CI, the script also
+   accepts `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_KEY_PATH` environment
+   variables for App Store Connect API key authentication. Run the script with
+   `--help` for all options.
+
+3. Confirm the uploaded build in App Store Connect
 4. Configure TestFlight testing
 5. Distribute to internal/external testers
 
