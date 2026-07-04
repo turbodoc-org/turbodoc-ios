@@ -55,7 +55,16 @@ struct ProfileView: View {
                 Image(systemName: "person.fill")
                     .font(.system(size: 40))
                     .foregroundColor(.blue)
+
+                if let avatarURL = authService.currentUser?.avatarURL {
+                    AsyncImage(url: URL(string: avatarURL)) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        EmptyView()
+                    }
+                }
             }
+            .clipShape(Circle())
             
             VStack(spacing: 8) {
                 if let user = authService.currentUser {

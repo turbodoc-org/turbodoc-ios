@@ -387,6 +387,24 @@ struct NotesView: View {
                     confirmDeleteNote(noteToDelete)
                 }
             )
+            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                Button {
+                    toggleFavorite(note)
+                } label: {
+                    Label(
+                        note.isFavorite ? "Unfavorite" : "Favorite",
+                        systemImage: note.isFavorite ? "star.slash.fill" : "star.fill"
+                    )
+                }
+                .tint(.yellow)
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button(role: .destructive) {
+                    confirmDeleteNote(note)
+                } label: {
+                    Label("Delete", systemImage: "trash.fill")
+                }
+            }
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             .listRowSeparator(.hidden)
         }

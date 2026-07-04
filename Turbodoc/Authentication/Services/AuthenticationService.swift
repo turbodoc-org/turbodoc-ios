@@ -51,7 +51,11 @@ class AuthenticationService: ObservableObject {
 
         do {
             let response = try await supabaseClient.auth.signIn(email: email, password: password)
-            let user = User(id: response.user.id.uuidString, email: response.user.email ?? email)
+            let user = User(
+                id: response.user.id.uuidString,
+                email: response.user.email ?? email,
+                avatarURL: response.user.userMetadata["avatar_url"]?.stringValue
+            )
             user.createdAt = response.user.createdAt
             user.updatedAt = response.user.updatedAt
 
@@ -91,7 +95,10 @@ class AuthenticationService: ObservableObject {
             // not required for this project — authenticate right away.
             if let token = response.session?.accessToken {
                 let user = User(
-                    id: response.user.id.uuidString, email: response.user.email ?? email)
+                    id: response.user.id.uuidString,
+                    email: response.user.email ?? email,
+                    avatarURL: response.user.userMetadata["avatar_url"]?.stringValue
+                )
                 user.createdAt = response.user.createdAt
                 user.updatedAt = response.user.updatedAt
                 currentUser = user
@@ -174,7 +181,11 @@ class AuthenticationService: ObservableObject {
     func getCurrentUser() async throws -> User? {
         do {
             let supabaseUser = try await supabaseClient.auth.user()
-            let user = User(id: supabaseUser.id.uuidString, email: supabaseUser.email ?? "")
+            let user = User(
+                id: supabaseUser.id.uuidString,
+                email: supabaseUser.email ?? "",
+                avatarURL: supabaseUser.userMetadata["avatar_url"]?.stringValue
+            )
             user.createdAt = supabaseUser.createdAt
             user.updatedAt = supabaseUser.updatedAt
             return user
@@ -190,7 +201,11 @@ class AuthenticationService: ObservableObject {
         do {
             let session = try await supabaseClient.auth.session
 
-            let user = User(id: session.user.id.uuidString, email: session.user.email ?? "")
+            let user = User(
+                id: session.user.id.uuidString,
+                email: session.user.email ?? "",
+                avatarURL: session.user.userMetadata["avatar_url"]?.stringValue
+            )
             user.createdAt = session.user.createdAt
             user.updatedAt = session.user.updatedAt
 
