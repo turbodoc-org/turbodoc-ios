@@ -13,6 +13,7 @@ class NoteItem {
     var updatedAt: Date = Date()
     var syncedAt: Date?
     var version: Int = 1
+    var headRevisionId: String?
     
     init(title: String? = nil, content: String = "", tags: [String] = [], userId: String = "", isFavorite: Bool = false, version: Int = 1) {
         self.id = UUID()
@@ -69,6 +70,7 @@ class NoteItem {
         copy.createdAt = createdAt
         copy.updatedAt = updatedAt
         copy.syncedAt = syncedAt
+        copy.headRevisionId = headRevisionId
         return copy
     }
 }

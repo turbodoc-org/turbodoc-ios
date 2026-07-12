@@ -143,12 +143,18 @@ struct APINoteRequest: Codable {
     let content: String
     let tags: String
     let is_favorite: Bool
+    let markdown: String
+    let base_revision_id: String?
+    let device_id: String
     
     init(from noteItem: NoteItem) {
         self.title = noteItem.title
         self.content = noteItem.content
         self.tags = noteItem.tags.joined(separator: "|")
         self.is_favorite = noteItem.isFavorite
+        self.markdown = noteItem.content
+        self.base_revision_id = noteItem.headRevisionId
+        self.device_id = DocumentDevice.identifier
     }
 }
 
@@ -156,14 +162,16 @@ struct APINoteResponse: Codable {
     let id: String
     let user_id: String
     let title: String?
-    let content: String
+    let markdown: String
     private let tags: TagsContainer?
     let created_at: String
     let updated_at: String
     let is_favorite: Bool?
+    let version: Int?
+    let head_revision_id: String?
     
     enum CodingKeys: String, CodingKey {
-        case id, user_id, title, content, tags, created_at, updated_at, is_favorite
+        case id, user_id, title, markdown, tags, created_at, updated_at, is_favorite, version, head_revision_id
     }
     
     var tagsList: [String] {
@@ -173,7 +181,7 @@ struct APINoteResponse: Codable {
     func toNoteItem() -> NoteItem {
         let note = NoteItem(
             title: title,
-            content: content,
+            content: markdown,
             tags: tagsList,
             userId: user_id
         )
@@ -197,10 +205,36 @@ struct APINoteResponse: Codable {
         }
         
         note.isFavorite = is_favorite ?? false
+        note.version = version ?? 1
+        note.headRevisionId = head_revision_id
         
         return note
     }
 }
+
+enum DocumentDevice {
+    static var identifier: String {
+        let key = "turbodoc.document.device-id"
+        if let existing = UserDefaults.standard.string(forKey: key) { return existing }
+        let value = "ios-\(UUID().uuidString)"
+        UserDefaults.standard.set(value, forKey: key)
+        return value
+    }
+}
+
+struct APIDocumentRevision: Codable, Identifiable {
+    let id: String
+    let document_id: String
+    let revision_number: Int
+    let title: String
+    let markdown: String
+    let name: String?
+    let change_summary: String?
+    let device_id: String?
+    let created_at: String
+}
+
+struct APIDocumentRevisionListResponse: Codable { let data: [APIDocumentRevision] }
 
 struct APINoteListResponse: Codable {
     let data: [APINoteResponse]

@@ -15,6 +15,7 @@ struct EditNoteView: View {
     @State private var saveStatus: SaveStatus = .saved
     @State private var showingDeleteConfirmation: Bool = false
     @State private var didDelete = false
+    @State private var showingHistory = false
     
     let onSave: (NoteItem) async -> NoteSaveOutcome
     let onFinish: () -> Void
@@ -73,6 +74,11 @@ struct EditNoteView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
+                    Button {
+                        showingHistory = true
+                    } label: {
+                        Label("Version History", systemImage: "clock.arrow.circlepath")
+                    }
                     Button(role: .destructive) {
                         showingDeleteConfirmation = true
                     } label: {
@@ -94,6 +100,14 @@ struct EditNoteView: View {
             }
         } message: {
             Text("Are you sure you want to delete \"\(note.displayTitle)\"? This action cannot be undone.")
+        }
+        .sheet(isPresented: $showingHistory) {
+            DocumentHistoryView(note: note) { restored in
+                note = restored
+                originalContent = restored.content
+                originalTitle = restored.title
+                showingHistory = false
+            }
         }
         .onDisappear {
             debounceTask?.cancel()
@@ -194,5 +208,75 @@ struct EditNoteView: View {
             default: return "circle"
             }
         }
+    }
+}
+
+private struct DocumentHistoryView: View {
+    let note: NoteItem
+    let onRestore: (NoteItem) -> Void
+    @State private var revisions: [APIDocumentRevision] = []
+    @State private var selected: APIDocumentRevision?
+    @State private var loading = true
+    @State private var restoring = false
+    @State private var errorMessage: String?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if loading {
+                    ProgressView("Loading history…")
+                } else if revisions.isEmpty {
+                    ContentUnavailableView("No Versions", systemImage: "clock", description: Text("A version appears after the first save."))
+                } else {
+                    List(revisions) { revision in
+                        Button {
+                            selected = revision
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(revision.name ?? "Version \(revision.revision_number)").font(.headline)
+                                Text(revision.change_summary ?? revision.device_id ?? "Automatic revision")
+                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Version History")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+            .task { await load() }
+            .alert("History unavailable", isPresented: .constant(errorMessage != nil)) {
+                Button("OK") { errorMessage = nil }
+            } message: { Text(errorMessage ?? "") }
+            .sheet(item: $selected) { revision in
+                NavigationStack {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text(revision.title.isEmpty ? "Untitled Note" : revision.title).font(.title2.bold())
+                            Text(revision.markdown).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding()
+                    }
+                    .navigationTitle(revision.name ?? "Version \(revision.revision_number)")
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Restore") { Task { await restore(revision) } }.disabled(restoring)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @MainActor private func load() async {
+        do { revisions = try await APIService.shared.fetchDocumentRevisions(id: note.id) }
+        catch { errorMessage = error.localizedDescription }
+        loading = false
+    }
+
+    @MainActor private func restore(_ revision: APIDocumentRevision) async {
+        restoring = true
+        defer { restoring = false }
+        do { onRestore(try await APIService.shared.restoreDocumentRevision(documentId: note.id, revisionId: revision.id)) }
+        catch { errorMessage = error.localizedDescription }
     }
 }
