@@ -1,9 +1,17 @@
 import SwiftUI
 
 enum NoteSaveOutcome {
-    case saved
+    case saved(NoteItem)
     case queued
     case failed
+}
+
+private enum NoteRestoreError: LocalizedError {
+    case pendingSync
+
+    var errorDescription: String? {
+        "This note has offline changes waiting to sync. Restore it after those changes are online."
+    }
 }
 
 struct EditNoteView: View {
@@ -16,8 +24,10 @@ struct EditNoteView: View {
     @State private var showingDeleteConfirmation: Bool = false
     @State private var didDelete = false
     @State private var showingHistory = false
+    @State private var isRestoring = false
     
     let onSave: (NoteItem) async -> NoteSaveOutcome
+    let onRestore: (NoteItem) -> Void
     let onFinish: () -> Void
     let onDelete: (NoteItem) -> Void
     
@@ -26,6 +36,7 @@ struct EditNoteView: View {
     init(
         note: NoteItem,
         onSave: @escaping (NoteItem) async -> NoteSaveOutcome,
+        onRestore: @escaping (NoteItem) -> Void,
         onFinish: @escaping () -> Void,
         onDelete: @escaping (NoteItem) -> Void
     ) {
@@ -33,6 +44,7 @@ struct EditNoteView: View {
         self._originalContent = State(initialValue: note.content)
         self._originalTitle = State(initialValue: note.title)
         self.onSave = onSave
+        self.onRestore = onRestore
         self.onFinish = onFinish
         self.onDelete = onDelete
     }
@@ -102,24 +114,22 @@ struct EditNoteView: View {
             Text("Are you sure you want to delete \"\(note.displayTitle)\"? This action cannot be undone.")
         }
         .sheet(isPresented: $showingHistory) {
-            DocumentHistoryView(note: note) { restored in
-                note = restored
-                originalContent = restored.content
-                originalTitle = restored.title
-                showingHistory = false
+            DocumentHistoryView(note: note) { revision in
+                try await restore(revision)
             }
         }
         .onDisappear {
             debounceTask?.cancel()
             guard !didDelete else { return }
             Task {
-                await saveIfNeeded()
+                _ = await saveIfNeeded()
                 onFinish()
             }
         }
     }
     
     private func scheduleAutoSave() {
+        guard !isRestoring else { return }
         saveStatus = .unsaved
         debounceTask?.cancel()
         debounceTask = Task {
@@ -129,14 +139,16 @@ struct EditNoteView: View {
                 return
             }
             debounceTask = nil
-            await saveIfNeeded()
+            _ = await saveIfNeeded()
         }
     }
     
     @MainActor
-    private func saveIfNeeded() async {
+    @discardableResult
+    private func saveIfNeeded() async -> Bool {
         let hasChanges = note.content != originalContent || note.title != originalTitle
-        guard hasChanges, !isSaving else { return }
+        guard hasChanges else { return true }
+        guard !isSaving else { return false }
 
         isSaving = true
         saveStatus = .saving
@@ -144,12 +156,20 @@ struct EditNoteView: View {
         let snapshot = note.copyForSaving()
         snapshot.updateTimestamp()
         let outcome = await onSave(snapshot)
+        var savedToServer = false
 
         switch outcome {
-        case .saved:
+        case .saved(let savedNote):
+            // Preserve any edits made while the request was in flight, but
+            // adopt the server's new revision head for the next merge.
+            note.headRevisionId = savedNote.headRevisionId
+            note.version = savedNote.version
+            note.updatedAt = savedNote.updatedAt
+            note.syncedAt = Date()
             originalContent = snapshot.content
             originalTitle = snapshot.title
             saveStatus = .saved
+            savedToServer = true
         case .queued:
             originalContent = snapshot.content
             originalTitle = snapshot.title
@@ -160,8 +180,46 @@ struct EditNoteView: View {
         isSaving = false
 
         if note.content != originalContent || note.title != originalTitle {
-            await saveIfNeeded()
+            return await saveIfNeeded()
         }
+        return savedToServer
+    }
+
+    @MainActor
+    private func restore(_ revision: APIDocumentRevision) async throws -> NoteItem {
+        debounceTask?.cancel()
+        debounceTask = nil
+
+        // The restore must be the last server write. Finish an active save,
+        // then flush any draft that had not reached the debounce yet.
+        while isSaving {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let savedToServer = await saveIfNeeded()
+        while isSaving {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        guard
+            savedToServer,
+            !SyncQueueManager.shared.hasPendingNoteOperation(for: note.id)
+        else {
+            throw NoteRestoreError.pendingSync
+        }
+
+        isRestoring = true
+        defer { isRestoring = false }
+
+        let restored = try await APIService.shared.restoreDocumentRevision(
+            documentId: note.id,
+            revisionId: revision.id
+        )
+        note = restored
+        originalContent = restored.content
+        originalTitle = restored.title
+        saveStatus = .saved
+        onRestore(restored)
+        showingHistory = false
+        return restored
     }
 
     @ViewBuilder
@@ -213,7 +271,7 @@ struct EditNoteView: View {
 
 private struct DocumentHistoryView: View {
     let note: NoteItem
-    let onRestore: (NoteItem) -> Void
+    let onRestore: (APIDocumentRevision) async throws -> NoteItem
     @State private var revisions: [APIDocumentRevision] = []
     @State private var selected: APIDocumentRevision?
     @State private var loading = true
@@ -276,7 +334,7 @@ private struct DocumentHistoryView: View {
     @MainActor private func restore(_ revision: APIDocumentRevision) async {
         restoring = true
         defer { restoring = false }
-        do { onRestore(try await APIService.shared.restoreDocumentRevision(documentId: note.id, revisionId: revision.id)) }
+        do { _ = try await onRestore(revision) }
         catch { errorMessage = error.localizedDescription }
     }
 }

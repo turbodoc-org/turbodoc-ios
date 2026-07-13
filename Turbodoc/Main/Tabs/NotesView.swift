@@ -196,6 +196,14 @@ struct NotesView: View {
                     onSave: { updatedNote in
                         await saveExistingNoteUpdate(updatedNote)
                     },
+                    onRestore: { restoredNote in
+                        if let index = notes.firstIndex(where: { $0.id == restoredNote.id }) {
+                            notes[index] = restoredNote
+                        }
+                        if let index = allNotes.firstIndex(where: { $0.id == restoredNote.id }) {
+                            allNotes[index] = restoredNote
+                        }
+                    },
                     onFinish: {
                         self.noteToEdit = nil
                     },
@@ -597,6 +605,7 @@ struct NotesView: View {
                     note.id = fetchedNote.id
                     note.isFavorite = payload.isFavorite ?? false
                     note.version = payload.version ?? 1
+                    note.headRevisionId = payload.headRevisionId
                     mergedNotes.append(note)
                 } else {
                     mergedNotes.append(fetchedNote)
@@ -701,7 +710,7 @@ struct NotesView: View {
             AppLogger.notes.info(
                 "Saved note \(note.id.uuidString, privacy: .public)"
             )
-            return .saved
+            return .saved(savedNote)
         } catch {
             SyncQueueManager.shared.queueNoteOperation(type: "update", note: note)
             AppLogger.notes.error(
