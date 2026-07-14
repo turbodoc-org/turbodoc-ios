@@ -286,6 +286,24 @@ class APIService {
             throw APIError.networkError
         }
     }
+
+    func fetchDocumentRevisions(id: UUID) async throws -> [APIDocumentRevision] {
+        let response = try await networkService.performRequest(
+            endpoint: APIConfig.Endpoints.noteById + id.uuidString + "/revisions",
+            method: .GET,
+            responseType: APIDocumentRevisionListResponse.self
+        )
+        return response.data
+    }
+
+    func restoreDocumentRevision(documentId: UUID, revisionId: String) async throws -> NoteItem {
+        let response = try await networkService.performRequest(
+            endpoint: APIConfig.Endpoints.noteById + documentId.uuidString + "/revisions/\(revisionId)/restore",
+            method: .POST,
+            responseType: APINoteUpdateResponse.self
+        )
+        return response.data.toNoteItem()
+    }
     
     func searchNotes(query: String, userId: String) async throws -> [NoteItem] {
         let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""

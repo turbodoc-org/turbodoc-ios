@@ -22,8 +22,8 @@ struct APIConfig {
         static let bookmarks = "/v1/bookmarks"
         static let bookmarkById = "/v1/bookmarks/" // append bookmark ID
         static let searchBookmarks = "/v1/bookmarks/search"
-        static let notes = "/v1/notes" // supports ?search= query parameter
-        static let noteById = "/v1/notes/" // append note ID
+        static let notes = "/v2/documents"
+        static let noteById = "/v2/documents/" // append document ID
         static let notesTranscribe = "/v1/notes/transcribe" // voice -> text (Workers AI Whisper)
         static let users = "/v1/users"
         static let userById = "/v1/users/" // append user ID

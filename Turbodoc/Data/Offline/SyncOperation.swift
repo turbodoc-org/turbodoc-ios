@@ -45,6 +45,7 @@ struct NoteOperationPayload: Codable {
     let tags: [String]?
     let isFavorite: Bool?
     let version: Int?
+    let headRevisionId: String?
 }
 
 struct BookmarkOperationPayload: Codable {

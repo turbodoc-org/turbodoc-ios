@@ -84,7 +84,8 @@ final class SyncQueueManager {
             content: note.content,
             tags: note.tags,
             isFavorite: note.isFavorite,
-            version: note.version
+            version: note.version,
+            headRevisionId: note.headRevisionId
         )
         
         guard let data = try? JSONEncoder().encode(payload) else {
@@ -155,9 +156,31 @@ final class SyncQueueManager {
             let noteOps = operations.filter { $0.entityType == "note" }
             let bookmarkOps = operations.filter { $0.entityType == "bookmark" }
             
-            // Process notes batch
+            // Existing documents must use v2 so offline edits retain their
+            // revision base and participate in automatic merging/history.
+            // Keep the legacy batch only for locally-created notes because v2
+            // currently assigns a new server ID on creation.
             if !noteOps.isEmpty {
-                await processBatchOperations(noteOps, entityType: "note", context: context)
+                let locallyCreatedIds = Set(
+                    noteOps
+                        .filter { $0.operationType == "create" }
+                        .compactMap(\.entityId)
+                )
+                let legacyCreateOps = noteOps.filter { operation in
+                    guard let entityId = operation.entityId else { return false }
+                    return locallyCreatedIds.contains(entityId)
+                }
+                let documentOps = noteOps.filter { operation in
+                    guard let entityId = operation.entityId else { return true }
+                    return !locallyCreatedIds.contains(entityId)
+                }
+
+                if !documentOps.isEmpty {
+                    await processDocumentOperations(documentOps, context: context)
+                }
+                if !legacyCreateOps.isEmpty {
+                    await processBatchOperations(legacyCreateOps, entityType: "note", context: context)
+                }
             }
             
             // Process bookmarks batch
@@ -174,6 +197,68 @@ final class SyncQueueManager {
             )
             lastSyncError = error.localizedDescription
         }
+    }
+
+    private func processDocumentOperations(
+        _ operations: [SyncOperation],
+        context: ModelContext
+    ) async {
+        for operation in operations {
+            guard
+                let data = operation.payload,
+                let payload = try? JSONDecoder().decode(NoteOperationPayload.self, from: data)
+            else {
+                markFailed(operation, context: context, message: "Invalid queued note payload")
+                continue
+            }
+
+            do {
+                switch operation.operationType {
+                case "update":
+                    guard let id = operation.entityId ?? payload.id else {
+                        throw APIError.networkError
+                    }
+                    let note = NoteItem(
+                        title: payload.title,
+                        content: payload.content ?? "",
+                        tags: payload.tags ?? [],
+                        isFavorite: payload.isFavorite ?? false,
+                        version: payload.version ?? 1
+                    )
+                    note.id = id
+                    note.headRevisionId = payload.headRevisionId
+                    _ = try await APIService.shared.updateNote(note)
+                case "delete":
+                    guard let id = operation.entityId ?? payload.id else {
+                        throw APIError.networkError
+                    }
+                    try await APIService.shared.deleteNote(id: id)
+                default:
+                    // Creates with temporary local IDs are handled by the
+                    // legacy batch path above.
+                    continue
+                }
+
+                context.delete(operation)
+                try context.save()
+            } catch {
+                markFailed(operation, context: context, message: error.localizedDescription)
+            }
+        }
+    }
+
+    private func markFailed(
+        _ operation: SyncOperation,
+        context: ModelContext,
+        message: String
+    ) {
+        operation.status = "failed"
+        operation.retryCount += 1
+        operation.lastError = message
+        if operation.retryCount >= 3 {
+            context.delete(operation)
+        }
+        try? context.save()
     }
     
     private func processBatchOperations(
@@ -305,6 +390,10 @@ final class SyncQueueManager {
             )
             return [:]
         }
+    }
+
+    func hasPendingNoteOperation(for noteId: UUID) -> Bool {
+        getPendingNotePayloads()[noteId] != nil
     }
     
     private func loadPendingOperationsCount() {
