@@ -80,6 +80,7 @@ struct EditNoteView: View {
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 saveStatusLabel
+                    .padding(.leading, 8)
                     .allowsHitTesting(false)
 
                 Menu {
