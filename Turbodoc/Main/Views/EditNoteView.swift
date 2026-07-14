@@ -71,12 +71,6 @@ struct EditNoteView: View {
             MarkdownEditor(text: $note.content)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 16)
-            .overlay(alignment: .topTrailing) {
-                saveStatusLabel
-                    .padding(.top, 8)
-                    .padding(.trailing, 20)
-                    .allowsHitTesting(false)
-            }
             .onChange(of: note.content) {
                 scheduleAutoSave()
             }
@@ -84,7 +78,10 @@ struct EditNoteView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                saveStatusLabel
+                    .allowsHitTesting(false)
+
                 Menu {
                     Button {
                         showingHistory = true
