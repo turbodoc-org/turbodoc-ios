@@ -8,7 +8,7 @@ enum NoteSaveOutcome {
 
 private enum NoteRestoreError: LocalizedError {
     case pendingSync
-
+    
     var errorDescription: String? {
         "This note has offline changes waiting to sync. Restore it after those changes are online."
     }
@@ -19,8 +19,10 @@ struct EditNoteView: View {
     @State private var originalContent: String
     @State private var originalTitle: String?
     @State private var debounceTask: Task<Void, Never>?
+    @State private var statusDismissTask: Task<Void, Never>?
     @State private var isSaving = false
     @State private var saveStatus: SaveStatus = .saved
+    @State private var isSaveStatusVisible = false
     @State private var showingDeleteConfirmation: Bool = false
     @State private var didDelete = false
     @State private var showingHistory = false
@@ -69,11 +71,11 @@ struct EditNoteView: View {
             Divider()
             
             MarkdownEditor(text: $note.content)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 16)
-            .onChange(of: note.content) {
-                scheduleAutoSave()
-            }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 16)
+                .onChange(of: note.content) {
+                    scheduleAutoSave()
+                }
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -82,7 +84,7 @@ struct EditNoteView: View {
                 saveStatusLabel
                     .padding(.leading, 8)
                     .allowsHitTesting(false)
-
+                
                 Menu {
                     Button {
                         showingHistory = true
@@ -105,6 +107,7 @@ struct EditNoteView: View {
             Button("Delete", role: .destructive) {
                 didDelete = true
                 debounceTask?.cancel()
+                statusDismissTask?.cancel()
                 onDelete(note)
                 dismiss()
             }
@@ -118,6 +121,7 @@ struct EditNoteView: View {
         }
         .onDisappear {
             debounceTask?.cancel()
+            statusDismissTask?.cancel()
             guard !didDelete else { return }
             Task {
                 _ = await saveIfNeeded()
@@ -128,7 +132,7 @@ struct EditNoteView: View {
     
     private func scheduleAutoSave() {
         guard !isRestoring else { return }
-        saveStatus = .unsaved
+        setSaveStatus(.unsaved)
         debounceTask?.cancel()
         debounceTask = Task {
             do {
@@ -147,15 +151,15 @@ struct EditNoteView: View {
         let hasChanges = note.content != originalContent || note.title != originalTitle
         guard hasChanges else { return true }
         guard !isSaving else { return false }
-
+        
         isSaving = true
-        saveStatus = .saving
-
+        setSaveStatus(.saving)
+        
         let snapshot = note.copyForSaving()
         snapshot.updateTimestamp()
         let outcome = await onSave(snapshot)
         var savedToServer = false
-
+        
         switch outcome {
         case .saved(let savedNote):
             // Preserve any edits made while the request was in flight, but
@@ -166,28 +170,28 @@ struct EditNoteView: View {
             note.syncedAt = Date()
             originalContent = snapshot.content
             originalTitle = snapshot.title
-            saveStatus = .saved
+            setSaveStatus(.saved)
             savedToServer = true
         case .queued:
             originalContent = snapshot.content
             originalTitle = snapshot.title
-            saveStatus = .offline
+            setSaveStatus(.offline)
         case .failed:
-            saveStatus = .failed
+            setSaveStatus(.failed)
         }
         isSaving = false
-
+        
         if note.content != originalContent || note.title != originalTitle {
             return await saveIfNeeded()
         }
         return savedToServer
     }
-
+    
     @MainActor
     private func restore(_ revision: APIDocumentRevision) async throws -> NoteItem {
         debounceTask?.cancel()
         debounceTask = nil
-
+        
         // The restore must be the last server write. Finish an active save,
         // then flush any draft that had not reached the debounce yet.
         while isSaving {
@@ -203,10 +207,10 @@ struct EditNoteView: View {
         else {
             throw NoteRestoreError.pendingSync
         }
-
+        
         isRestoring = true
         defer { isRestoring = false }
-
+        
         let restored = try await APIService.shared.restoreDocumentRevision(
             documentId: note.id,
             revisionId: revision.id
@@ -214,15 +218,15 @@ struct EditNoteView: View {
         note = restored
         originalContent = restored.content
         originalTitle = restored.title
-        saveStatus = .saved
+        setSaveStatus(.saved)
         onRestore(restored)
         showingHistory = false
         return restored
     }
-
+    
     @ViewBuilder
     private var saveStatusLabel: some View {
-        if saveStatus != .saved {
+        if isSaveStatusVisible {
             HStack(spacing: 5) {
                 if saveStatus == .saving {
                     ProgressView()
@@ -233,20 +237,50 @@ struct EditNoteView: View {
                 Text(saveStatus.label)
             }
             .font(.caption2.weight(.medium))
-            .foregroundStyle(saveStatus == .failed ? Color.red : Color.secondary)
+            .foregroundStyle(
+                saveStatus == .failed
+                ? Color.red
+                : saveStatus == .saved ? Color.green.opacity(0.85) : Color.secondary
+            )
             .padding(.horizontal, 9)
             .padding(.vertical, 6)
             .background(.regularMaterial, in: Capsule())
+            .transition(.saveStatusBadge)
+            .animation(.easeInOut(duration: 0.2), value: saveStatus)
         }
     }
-
+    
+    @MainActor
+    private func setSaveStatus(_ status: SaveStatus) {
+        statusDismissTask?.cancel()
+        
+        withAnimation(.easeOut(duration: 0.24)) {
+            saveStatus = status
+            isSaveStatusVisible = true
+        }
+        
+        guard status == .saved else { return }
+        statusDismissTask = Task {
+            do {
+                try await Task.sleep(for: .seconds(1.1))
+            } catch {
+                return
+            }
+            
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.4)) {
+                isSaveStatusVisible = false
+            }
+        }
+    }
+    
     private enum SaveStatus: Equatable {
         case saved
         case unsaved
         case saving
         case offline
         case failed
-
+        
         var label: String {
             switch self {
             case .saved: return "Saved"
@@ -256,14 +290,34 @@ struct EditNoteView: View {
             case .failed: return "Save failed"
             }
         }
-
+        
         var icon: String {
             switch self {
+            case .saved: return "checkmark.circle.fill"
             case .offline: return "icloud.slash"
             case .failed: return "exclamationmark.triangle.fill"
             default: return "circle"
             }
         }
+    }
+}
+
+private struct SaveStatusRevealModifier: ViewModifier {
+    let progress: CGFloat
+    
+    func body(content: Content) -> some View {
+        content
+            .opacity(progress)
+            .scaleEffect(x: progress, y: 1, anchor: .trailing)
+    }
+}
+
+private extension AnyTransition {
+    static var saveStatusBadge: AnyTransition {
+        .modifier(
+            active: SaveStatusRevealModifier(progress: 0),
+            identity: SaveStatusRevealModifier(progress: 1)
+        )
     }
 }
 
@@ -276,7 +330,7 @@ private struct DocumentHistoryView: View {
     @State private var restoring = false
     @State private var errorMessage: String?
     @Environment(\.dismiss) private var dismiss
-
+    
     var body: some View {
         NavigationStack {
             Group {
@@ -304,31 +358,31 @@ private struct DocumentHistoryView: View {
             .alert("History unavailable", isPresented: .constant(errorMessage != nil)) {
                 Button("OK") { errorMessage = nil }
             } message: { Text(errorMessage ?? "") }
-            .sheet(item: $selected) { revision in
-                NavigationStack {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text(revision.title.isEmpty ? "Untitled Note" : revision.title).font(.title2.bold())
-                            Text(revision.markdown).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding()
-                    }
-                    .navigationTitle(revision.name ?? "Version \(revision.revision_number)")
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Restore") { Task { await restore(revision) } }.disabled(restoring)
+                .sheet(item: $selected) { revision in
+                    NavigationStack {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 16) {
+                                Text(revision.title.isEmpty ? "Untitled Note" : revision.title).font(.title2.bold())
+                                Text(revision.markdown).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                            }.frame(maxWidth: .infinity, alignment: .leading).padding()
+                        }
+                        .navigationTitle(revision.name ?? "Version \(revision.revision_number)")
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Restore") { Task { await restore(revision) } }.disabled(restoring)
+                            }
                         }
                     }
                 }
-            }
         }
     }
-
+    
     @MainActor private func load() async {
         do { revisions = try await APIService.shared.fetchDocumentRevisions(id: note.id) }
         catch { errorMessage = error.localizedDescription }
         loading = false
     }
-
+    
     @MainActor private func restore(_ revision: APIDocumentRevision) async {
         restoring = true
         defer { restoring = false }
