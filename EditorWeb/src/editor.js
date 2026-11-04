@@ -260,6 +260,9 @@ const crepe = new Crepe({
     [Crepe.Feature.AI]: false,
     [Crepe.Feature.Latex]: false,
     [Crepe.Feature.BlockEdit]: false,
+    // iOS already shows its own edit menu on a selection; a second floating
+    // bar on top of it was cluttered and covered the text.
+    [Crepe.Feature.Toolbar]: false,
   },
   featureConfigs: {
     [Crepe.Feature.Placeholder]: {

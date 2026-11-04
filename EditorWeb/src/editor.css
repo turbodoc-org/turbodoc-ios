@@ -139,10 +139,22 @@ body {
   text-underline-offset: 2px;
 }
 
+/* The marker column already indents each item, so lists add no padding of
+   their own: top-level markers sit at the text edge and nested items line
+   up with their parent's text. */
 .milkdown .ProseMirror ul,
 .milkdown .ProseMirror ol {
   margin-block: 0.36em;
-  padding-left: 1.45em;
+  padding-left: 0;
+}
+
+.milkdown .ProseMirror .milkdown-list-item-block li {
+  gap: 6px;
+}
+
+.milkdown .ProseMirror .milkdown-list-item-block li .label-wrapper {
+  justify-content: flex-start;
+  width: 22px;
 }
 
 .milkdown .ProseMirror li {
