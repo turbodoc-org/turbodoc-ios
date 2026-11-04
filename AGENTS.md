@@ -25,6 +25,9 @@ Turbodoc is an iOS bookmark management application built with SwiftUI and SwiftD
 - **Unit Tests**: `TurbodocTests` (Swift Testing), hosted by the app. Run with ⌘+U or
   `xcodebuild test -scheme Turbodoc -destination 'platform=iOS Simulator,name=iPhone 16'`.
   Note sync rules live in `Turbodoc/Data/Sync/NoteSync.swift` and are covered by `NoteSyncTests`.
+- **Editor (EditorWeb)**: `pnpm test` in `EditorWeb` runs the Node tests. After changing
+  `EditorWeb/src`, run `pnpm run build` and commit the rebuilt
+  `Turbodoc/Resources/MarkdownEditor/editor.js`.
 - **UI Tests**: Not yet implemented - will be added in development phases
 
 ## Architecture

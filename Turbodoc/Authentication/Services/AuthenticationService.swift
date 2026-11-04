@@ -226,6 +226,57 @@ class AuthenticationService: ObservableObject {
         return authToken
     }
 
+    // MARK: - Realtime
+
+    /// Updates to one note from any device, through Supabase Realtime.
+    ///
+    /// The channel authenticates with the signed-in user's access token
+    /// (SupabaseClient hands its auth session to Realtime), so row level
+    /// security only delivers the user's own notes. Ends when the consuming
+    /// task is cancelled, which also removes the channel.
+    func noteUpdates(id: UUID) -> AsyncStream<NoteLiveEvent> {
+        let client = supabaseClient
+        let noteId = id.uuidString.lowercased()
+        let channel = client.channel("note:\(noteId)")
+        // Register listeners before subscribing, or the join omits them.
+        let updates = channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "notes",
+            filter: RealtimePostgresFilter.eq("id", value: noteId)
+        )
+        let statuses = channel.statusChange
+
+        return AsyncStream { continuation in
+            let task = Task {
+                await withTaskGroup(of: Void.self) { group in
+                    group.addTask {
+                        for await update in updates {
+                            continuation.yield(.updated(version: update.record["version"]?.intValue))
+                        }
+                    }
+                    group.addTask {
+                        // Realtime rejoins channels after a lost connection.
+                        // Saves made meanwhile were missed: report the rejoin.
+                        var subscribedBefore = false
+                        for await status in statuses where status == .subscribed {
+                            if subscribedBefore {
+                                continuation.yield(.resubscribed)
+                            }
+                            subscribedBefore = true
+                        }
+                    }
+                    await channel.subscribe()
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
+                Task { await client.removeChannel(channel) }
+            }
+        }
+    }
+
     // MARK: - Shared Storage for Share Extension
 
     private func saveAuthTokenToSharedStorage(_ token: String) {
@@ -274,6 +325,13 @@ class AuthenticationService: ObservableObject {
             )
         }
     }
+}
+
+enum NoteLiveEvent: Sendable {
+    /// Another save reached the server. `version` is the note's new version.
+    case updated(version: Int?)
+    /// The channel reconnected after a disconnect; updates may have been missed.
+    case resubscribed
 }
 
 enum AuthenticationError: Error {
