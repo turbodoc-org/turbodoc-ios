@@ -240,55 +240,125 @@ class APIService {
         }
     }
     
-    func saveNote(_ note: NoteItem) async throws -> NoteItem {
-        let endpoint = APIConfig.Endpoints.notes
-        let requestBody = APINoteRequest(from: note)
-        
+    /// Creates a note under its local ID, so an offline create can be
+    /// replayed safely: the server answers 201 when it creates the document
+    /// and 200 with the existing document for a replay.
+    func createDocument(_ note: NoteItem) async throws -> NoteItem {
         do {
-            let bodyData = try networkService.encodeBody(requestBody)
+            let bodyData = try networkService.encodeBody(APIDocumentCreateRequest(from: note))
             let response = try await networkService.performRequest(
-                endpoint: endpoint,
+                endpoint: APIConfig.Endpoints.notes,
                 method: .POST,
                 body: bodyData,
                 responseType: APINoteCreateResponse.self
             )
-            
             return response.data.toNoteItem()
         } catch {
-            throw APIError.networkError
+            throw Self.noteError(error)
         }
     }
-    
-    func updateNote(_ note: NoteItem) async throws -> NoteItem {
-        let endpoint = APIConfig.Endpoints.noteById + note.id.uuidString
-        let requestBody = APINoteRequest(from: note)
-        
+
+    /// Creates the note under its local ID. If it already exists (a replay
+    /// of a create that reached the server), the note's text is saved on top
+    /// of the stored version.
+    func createOrReplayDocument(_ note: NoteItem) async throws -> DocumentSaveResult {
+        let created = try await createDocument(note)
+        guard NoteDraft(created) != NoteDraft(note) else {
+            return DocumentSaveResult(
+                note: created,
+                merged: false,
+                conflicts: 0,
+                submittedRevisionId: created.headRevisionId
+            )
+        }
+        return try await saveDocument(
+            id: note.id,
+            title: note.title ?? "",
+            content: note.content,
+            isFavorite: nil,
+            baseRevisionId: created.headRevisionId
+        )
+    }
+
+    /// Saves edits made on top of `baseRevisionId`. The server merges them
+    /// with anything saved since that revision. Pass nil for a field that
+    /// did not change: omitted fields are left as they are on the server.
+    func saveDocument(
+        id: UUID,
+        title: String?,
+        content: String?,
+        isFavorite: Bool?,
+        baseRevisionId: String?
+    ) async throws -> DocumentSaveResult {
+        let requestBody = APIDocumentSaveRequest(
+            title: title,
+            markdown: content,
+            is_favorite: isFavorite,
+            base_revision_id: baseRevisionId,
+            device_id: DocumentDevice.identifier
+        )
+
         do {
             let bodyData = try networkService.encodeBody(requestBody)
             let response = try await networkService.performRequest(
-                endpoint: endpoint,
+                endpoint: APIConfig.Endpoints.noteById + id.uuidString,
                 method: .PUT,
                 body: bodyData,
-                responseType: APINoteUpdateResponse.self
+                responseType: APIDocumentSaveResponse.self
             )
-            
-            return response.data.toNoteItem()
+            return DocumentSaveResult(
+                note: response.data.toNoteItem(),
+                merged: response.merged ?? false,
+                conflicts: response.conflicts ?? 0,
+                submittedRevisionId: response.submitted_revision_id
+            )
         } catch {
-            throw APIError.networkError
+            throw Self.noteError(error)
         }
     }
-    
+
+    func fetchDocument(id: UUID) async throws -> NoteItem {
+        do {
+            let response = try await networkService.performRequest(
+                endpoint: APIConfig.Endpoints.noteById + id.uuidString,
+                method: .GET,
+                responseType: APINoteCreateResponse.self
+            )
+            return response.data.toNoteItem()
+        } catch {
+            throw Self.noteError(error)
+        }
+    }
+
     func deleteNote(id: UUID) async throws {
         let endpoint = APIConfig.Endpoints.noteById + id.uuidString
-        
+
         do {
             try await networkService.performRequest(
                 endpoint: endpoint,
                 method: .DELETE
             )
         } catch {
-            throw APIError.networkError
+            throw Self.noteError(error)
         }
+    }
+
+    /// Note calls tell "offline" apart from "the server said no": only a
+    /// transport failure is a `networkError` (and may be queued for later).
+    private static func noteError(_ error: Error) -> Error {
+        if let apiError = error as? APIError { return apiError }
+        if error is URLError { return APIError.networkError }
+        if let networkError = error as? NetworkError {
+            switch networkError {
+            case .serverError(let status, let message):
+                return APIError.http(status: status, message: message)
+            case .httpError(let status):
+                return APIError.http(status: status, message: nil)
+            default:
+                return APIError.invalidResponse
+            }
+        }
+        return APIError.invalidResponse
     }
 
     func fetchDocumentRevisions(id: UUID) async throws -> [APIDocumentRevision] {
@@ -367,11 +437,35 @@ class APIService {
 
 // MARK: - Supporting Models
 
+struct DocumentSaveResult {
+    let note: NoteItem
+    /// The server combined this save with newer edits.
+    let merged: Bool
+    /// Passages both sides rewrote. Both versions were kept.
+    let conflicts: Int
+    /// A revision holding exactly what this save sent.
+    let submittedRevisionId: String?
+
+    var syncResponse: NoteSaveResponse {
+        NoteSaveResponse(
+            document: ServerDocument(note),
+            submittedRevisionId: submittedRevisionId
+        )
+    }
+}
+
 enum APIError: LocalizedError {
     case networkError
     case invalidResponse
     case authenticationRequired
     case serverError(String)
+    /// The server answered with a non-2xx status.
+    case http(status: Int, message: String?)
+    
+    var statusCode: Int? {
+        if case .http(let status, _) = self { return status }
+        return nil
+    }
     
     var errorDescription: String? {
         switch self {
@@ -383,6 +477,8 @@ enum APIError: LocalizedError {
             return "Authentication required"
         case .serverError(let message):
             return "Server error: \(message)"
+        case .http(let status, let message):
+            return message ?? "The server returned HTTP \(status)."
         }
     }
 }

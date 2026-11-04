@@ -1,9 +1,14 @@
 import SwiftUI
+import Combine
 
 enum NoteSaveOutcome {
-    case saved(NoteItem)
+    case saved(DocumentSaveResult)
+    /// Offline: the edits are queued and stay unsynced in the editor.
     case queued
+    /// The server refused the save. Retried on the next edit.
     case failed
+    /// The note was deleted on another device.
+    case deleted
 }
 
 private enum NoteRestoreError: LocalizedError {
@@ -16,8 +21,12 @@ private enum NoteRestoreError: LocalizedError {
 
 struct EditNoteView: View {
     @State private var note: NoteItem
-    @State private var originalContent: String
-    @State private var originalTitle: String?
+    /// The last document this editor agreed on with the server. Its revision
+    /// is the base of every save, so the server merges in anything newer.
+    @State private var synced: SyncedState
+    /// The offline queue held edits for this note when it was opened, or
+    /// took a save while offline. The editor sends them itself.
+    @State private var hasQueuedEdits = false
     @State private var debounceTask: Task<Void, Never>?
     @State private var statusDismissTask: Task<Void, Never>?
     @State private var isSaving = false
@@ -27,29 +36,46 @@ struct EditNoteView: View {
     @State private var didDelete = false
     @State private var showingHistory = false
     @State private var isRestoring = false
+    @State private var showsConflictNotice = false
+    @State private var conflictNoticeTask: Task<Void, Never>?
+    @State private var wasDeletedElsewhere = false
+    @State private var showingDeletedElsewhere = false
     @State private var editorController = MarkdownEditorController()
     
-    let onSave: (NoteItem) async -> NoteSaveOutcome
+    /// Saves a snapshot of the note on top of the given base revision.
+    let onSave: (NoteItem, String?) async -> NoteSaveOutcome
     let onRestore: (NoteItem) -> Void
     let onFinish: () -> Void
     let onDelete: (NoteItem) -> Void
+    /// Saves the draft as a new note (after it was deleted elsewhere).
+    let onKeepCopy: (NoteItem) -> Void
     
     @Environment(\.dismiss) private var dismiss
     
     init(
         note: NoteItem,
-        onSave: @escaping (NoteItem) async -> NoteSaveOutcome,
+        onSave: @escaping (NoteItem, String?) async -> NoteSaveOutcome,
         onRestore: @escaping (NoteItem) -> Void,
         onFinish: @escaping () -> Void,
-        onDelete: @escaping (NoteItem) -> Void
+        onDelete: @escaping (NoteItem) -> Void,
+        onKeepCopy: @escaping (NoteItem) -> Void
     ) {
         self._note = State(initialValue: note)
-        self._originalContent = State(initialValue: note.content)
-        self._originalTitle = State(initialValue: note.title)
+        self._synced = State(initialValue: SyncedState(note))
         self.onSave = onSave
         self.onRestore = onRestore
         self.onFinish = onFinish
         self.onDelete = onDelete
+        self.onKeepCopy = onKeepCopy
+    }
+    
+    private var draft: NoteDraft {
+        NoteDraft(note)
+    }
+    
+    /// True while the server lacks something the editor holds.
+    private var needsSave: Bool {
+        hasQueuedEdits || NoteSync.hasUnsyncedEdits(draft, synced)
     }
     
     var body: some View {
@@ -60,7 +86,7 @@ struct EditNoteView: View {
                     get: { note.title ?? "" },
                     set: { newValue in
                         note.title = newValue.isEmpty ? nil : newValue
-                        scheduleAutoSave()
+                        draftChanged()
                     }
                 ))
                 .font(.title2)
@@ -75,8 +101,13 @@ struct EditNoteView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 16)
                 .onChange(of: note.content) {
-                    scheduleAutoSave()
+                    draftChanged()
                 }
+        }
+        .overlay(alignment: .top) {
+            if showsConflictNotice {
+                conflictNotice
+            }
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -117,24 +148,91 @@ struct EditNoteView: View {
         } message: {
             Text("Are you sure you want to delete \"\(note.displayTitle)\"? This action cannot be undone.")
         }
+        .alert("Note Deleted", isPresented: $showingDeletedElsewhere) {
+            Button("Keep a Copy") {
+                keepCopy()
+            }
+            Button("Discard", role: .destructive) {
+                dismiss()
+            }
+        } message: {
+            Text("This note was deleted on another device.")
+        }
         .sheet(isPresented: $showingHistory) {
             DocumentHistoryView(note: note) { revision in
                 try await restore(revision)
             }
         }
+        .onAppear {
+            takeOwnership()
+        }
+        .onReceive(NetworkMonitor.shared.connectionStatusChanged) { isConnected in
+            // Back online: this editor sends its own unsynced edits.
+            guard isConnected, needsSave, !wasDeletedElsewhere else { return }
+            Task { await saveIfNeeded() }
+        }
         .onDisappear {
             debounceTask?.cancel()
             statusDismissTask?.cancel()
-            guard !didDelete else { return }
+            conflictNoticeTask?.cancel()
+            let noteId = note.id
+            guard !didDelete, !wasDeletedElsewhere else {
+                SyncQueueManager.shared.clearActiveEditor(noteId)
+                if wasDeletedElsewhere { onFinish() }
+                return
+            }
             Task {
+                while isSaving {
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
                 _ = await saveIfNeeded()
+                if needsSave || wasDeletedElsewhere {
+                    // Not saved (offline, refused, or deleted meanwhile). The
+                    // queue keeps retrying and recovers a deleted note as a
+                    // copy, so the edits are never dropped.
+                    SyncQueueManager.shared.queueNoteOperation(
+                        type: "update",
+                        note: note.copyForSaving(),
+                        baseRevisionId: synced.revisionId
+                    )
+                }
+                SyncQueueManager.shared.clearActiveEditor(noteId)
                 onFinish()
             }
         }
     }
     
-    private func scheduleAutoSave() {
-        guard !isRestoring else { return }
+    /// While open, the editor syncs this note itself, including edits the
+    /// queue still held for it.
+    private func takeOwnership() {
+        SyncQueueManager.shared.setActiveEditor(note.id)
+        
+        guard
+            !hasQueuedEdits,
+            let pending = SyncQueueManager.shared.pendingNoteOperation(for: note.id),
+            pending.type != "delete"
+        else { return }
+        
+        hasQueuedEdits = true
+        if pending.type == "update" {
+            // The queued edits started from this revision, so it stays the base.
+            synced.revisionId = pending.payload.baseRevisionId
+        }
+        if NetworkMonitor.shared.isConnected {
+            Task { await saveIfNeeded() }
+        }
+    }
+    
+    private func draftChanged() {
+        guard !isRestoring, !wasDeletedElsewhere else { return }
+        guard needsSave else {
+            // Back to the synced text: undone, or the server's version was
+            // just loaded. Nothing to save.
+            debounceTask?.cancel()
+            debounceTask = nil
+            if saveStatus == .unsaved { setSaveStatus(.saved) }
+            return
+        }
         setSaveStatus(.unsaved)
         debounceTask?.cancel()
         debounceTask = Task {
@@ -151,43 +249,86 @@ struct EditNoteView: View {
     @MainActor
     @discardableResult
     private func saveIfNeeded() async -> Bool {
-        let hasChanges = note.content != originalContent || note.title != originalTitle
-        guard hasChanges else { return true }
+        guard !wasDeletedElsewhere else { return false }
+        guard needsSave else { return true }
         guard !isSaving else { return false }
         
         isSaving = true
         setSaveStatus(.saving)
         
+        let sent = draft
         let snapshot = note.copyForSaving()
         snapshot.updateTimestamp()
-        let outcome = await onSave(snapshot)
+        // Always the revision the editor's edits started from, never just
+        // the newest head it heard about.
+        let outcome = await onSave(snapshot, synced.revisionId)
         var savedToServer = false
         
         switch outcome {
-        case .saved(let savedNote):
-            // Preserve any edits made while the request was in flight, but
-            // adopt the server's new revision head for the next merge.
-            note.headRevisionId = savedNote.headRevisionId
-            note.version = savedNote.version
-            note.updatedAt = savedNote.updatedAt
+        case .saved(let result):
+            let decision = NoteSync.afterSave(
+                sent: sent,
+                latest: draft,
+                response: result.syncResponse
+            )
+            // Set before loading the server's draft, so the change it causes
+            // compares equal and does not schedule another save.
+            synced = decision.synced
+            hasQueuedEdits = false
+            if let adopt = decision.adopt {
+                applyServerDraft(adopt)
+            }
+            note.headRevisionId = result.note.headRevisionId
+            note.version = result.note.version
+            note.updatedAt = result.note.updatedAt
             note.syncedAt = Date()
-            originalContent = snapshot.content
-            originalTitle = snapshot.title
+            // This save already contains anything queued for the note.
+            SyncQueueManager.shared.removePendingNoteUpdates(for: note.id)
+            if result.conflicts > 0 {
+                presentConflictNotice()
+            }
             setSaveStatus(.saved)
             savedToServer = true
         case .queued:
-            originalContent = snapshot.content
-            originalTitle = snapshot.title
+            // The edits stay unsynced: the base is still the last revision
+            // the server confirmed.
+            hasQueuedEdits = true
             setSaveStatus(.offline)
         case .failed:
             setSaveStatus(.failed)
+        case .deleted:
+            wasDeletedElsewhere = true
+            debounceTask?.cancel()
+            debounceTask = nil
+            setSaveStatus(.failed)
+            showingDeletedElsewhere = true
         }
         isSaving = false
         
-        if note.content != originalContent || note.title != originalTitle {
+        // Typing continued during the save: send the rest.
+        if savedToServer && needsSave {
             return await saveIfNeeded()
         }
         return savedToServer
+    }
+    
+    /// Loads the server's version into the editor. `synced` already matches
+    /// it, so `draftChanged` sees nothing to save.
+    private func applyServerDraft(_ adopt: NoteDraft) {
+        note.title = adopt.title.isEmpty ? nil : adopt.title
+        note.content = adopt.content
+    }
+    
+    private func keepCopy() {
+        let copy = NoteItem(
+            title: note.title,
+            content: note.content,
+            tags: note.tags,
+            userId: note.userId,
+            isFavorite: note.isFavorite
+        )
+        onKeepCopy(copy)
+        dismiss()
     }
     
     @MainActor
@@ -218,13 +359,59 @@ struct EditNoteView: View {
             documentId: note.id,
             revisionId: revision.id
         )
+        synced = SyncedState(restored)
+        hasQueuedEdits = false
         note = restored
-        originalContent = restored.content
-        originalTitle = restored.title
         setSaveStatus(.saved)
         onRestore(restored)
         showingHistory = false
         return restored
+    }
+    
+    private var conflictNotice: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "arrow.triangle.merge")
+                .foregroundStyle(.secondary)
+            Text("This note was also edited on another device. Where you both changed the same passage, both versions were kept.")
+                .font(.footnote)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                dismissConflictNotice()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+    
+    private func presentConflictNotice() {
+        conflictNoticeTask?.cancel()
+        withAnimation(.easeOut(duration: 0.25)) {
+            showsConflictNotice = true
+        }
+        conflictNoticeTask = Task {
+            do {
+                try await Task.sleep(for: .seconds(8))
+            } catch {
+                return
+            }
+            dismissConflictNotice()
+        }
+    }
+    
+    private func dismissConflictNotice() {
+        conflictNoticeTask?.cancel()
+        conflictNoticeTask = nil
+        withAnimation(.easeInOut(duration: 0.25)) {
+            showsConflictNotice = false
+        }
     }
     
     @ViewBuilder
@@ -347,7 +534,7 @@ private struct DocumentHistoryView: View {
                             selected = revision
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(revision.name ?? "Version \(revision.revision_number)").font(.headline)
+                                Text(revision.displayName).font(.headline)
                                 Text(revision.change_summary ?? revision.device_id ?? "Automatic revision")
                                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             }
@@ -369,7 +556,7 @@ private struct DocumentHistoryView: View {
                                 Text(revision.markdown).font(.system(.body, design: .monospaced)).textSelection(.enabled)
                             }.frame(maxWidth: .infinity, alignment: .leading).padding()
                         }
-                        .navigationTitle(revision.name ?? "Version \(revision.revision_number)")
+                        .navigationTitle(revision.displayName)
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
                                 Button("Restore") { Task { await restore(revision) } }.disabled(restoring)

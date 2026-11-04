@@ -159,24 +159,45 @@ struct APITranscriptionResponse: Codable {
     let text: String
 }
 
-struct APINoteRequest: Codable {
+/// `PUT /v2/documents/:id`. Omitted fields mean "unchanged since my base".
+/// The synthesized encoder skips nil optionals, so only set fields are sent.
+struct APIDocumentSaveRequest: Codable {
     let title: String?
-    let content: String
-    let tags: String
-    let is_favorite: Bool
-    let markdown: String
+    let markdown: String?
+    let is_favorite: Bool?
+    /// The revision these edits started from, not just the latest known head.
     let base_revision_id: String?
     let device_id: String
-    
-    init(from noteItem: NoteItem) {
-        self.title = noteItem.title
-        self.content = noteItem.content
-        self.tags = noteItem.tags.joined(separator: "|")
-        self.is_favorite = noteItem.isFavorite
-        self.markdown = noteItem.content
-        self.base_revision_id = noteItem.headRevisionId
+}
+
+/// `POST /v2/documents`. The client-generated `id` makes the create
+/// idempotent: a replay returns the existing document with status 200.
+struct APIDocumentCreateRequest: Codable {
+    let id: String
+    let title: String
+    let markdown: String
+    let tags: String
+    let is_favorite: Bool
+    let device_id: String
+
+    init(from note: NoteItem) {
+        self.id = note.id.uuidString
+        self.title = note.title ?? ""
+        self.markdown = note.content
+        self.tags = note.tags.joined(separator: "|")
+        self.is_favorite = note.isFavorite
         self.device_id = DocumentDevice.identifier
     }
+}
+
+struct APIDocumentSaveResponse: Codable {
+    let data: APINoteResponse
+    /// The server combined this save with newer edits.
+    let merged: Bool?
+    /// Passages both sides rewrote. Both versions were kept.
+    let conflicts: Int?
+    /// A revision holding exactly what this request sent.
+    let submitted_revision_id: String?
 }
 
 struct APINoteResponse: Codable {
@@ -241,13 +262,21 @@ enum DocumentDevice {
 struct APIDocumentRevision: Codable, Identifiable {
     let id: String
     let document_id: String
-    let revision_number: Int
+    let revision_number: Int?
     let title: String
     let markdown: String
     let name: String?
     let change_summary: String?
     let device_id: String?
     let created_at: String
+}
+
+extension APIDocumentRevision {
+    var displayName: String {
+        if let name, !name.isEmpty { return name }
+        if let revision_number { return "Version \(revision_number)" }
+        return "Version"
+    }
 }
 
 struct APIDocumentRevisionListResponse: Codable { let data: [APIDocumentRevision] }

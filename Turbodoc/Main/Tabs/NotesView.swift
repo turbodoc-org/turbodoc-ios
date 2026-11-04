@@ -140,7 +140,7 @@ struct NotesView: View {
             .sheet(isPresented: $showingAddNote) {
                 AddNoteView(
                     onSave: { note in
-                        saveNoteUpdate(note)
+                        createNote(note)
                         showingAddNote = false
                     }
                 )
@@ -154,7 +154,7 @@ struct NotesView: View {
                         tags: [],
                         userId: userId
                     )
-                    saveNoteUpdate(note)
+                    createNote(note)
                 })
             }
             .sheet(isPresented: $showingPhotoOCR) {
@@ -166,8 +166,12 @@ struct NotesView: View {
                         tags: [],
                         userId: userId
                     )
-                    saveNoteUpdate(note)
+                    createNote(note)
                 })
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .noteQueueDidSync)) { notification in
+                guard let event = notification.object as? NoteQueueEvent else { return }
+                applyQueueEvent(event)
             }
             .onChange(of: quickActionService.currentAction) { _, action in
                 switch action {
@@ -180,8 +184,8 @@ struct NotesView: View {
             .navigationDestination(item: $noteToEdit) { noteToEdit in
                 EditNoteView(
                     note: noteToEdit,
-                    onSave: { updatedNote in
-                        await saveExistingNoteUpdate(updatedNote)
+                    onSave: { updatedNote, baseRevisionId in
+                        await saveExistingNoteUpdate(updatedNote, baseRevisionId: baseRevisionId)
                     },
                     onRestore: { restoredNote in
                         if let index = notes.firstIndex(where: { $0.id == restoredNote.id }) {
@@ -197,6 +201,9 @@ struct NotesView: View {
                     onDelete: { noteToDelete in
                         deleteNote(noteToDelete)
                         self.noteToEdit = nil
+                    },
+                    onKeepCopy: { copy in
+                        createNote(copy)
                     }
                 )
                 .hidesTabBar()
@@ -492,8 +499,20 @@ struct NotesView: View {
             do {
                 try await APIService.shared.deleteNote(id: note.id)
                 await MainActor.run {
-                    self.notes.removeAll { $0.id == note.id }
-                    self.allNotes.removeAll { $0.id == note.id }
+                    SyncQueueManager.shared.discardPendingNoteOperations(for: note.id)
+                    removeNoteLocally(note.id)
+                    self.noteToDelete = nil
+                    HapticManager.shared.success()
+                }
+            } catch APIError.networkError {
+                // Offline: delete it when the connection is back.
+                await MainActor.run {
+                    SyncQueueManager.shared.queueNoteOperation(
+                        type: "delete",
+                        note: note,
+                        baseRevisionId: nil
+                    )
+                    removeNoteLocally(note.id)
                     self.noteToDelete = nil
                     HapticManager.shared.success()
                 }
@@ -507,44 +526,78 @@ struct NotesView: View {
         }
     }
     
-    private func toggleFavorite(_ note: NoteItem) {
-        HapticManager.shared.selection()
-        
-        // Optimistic UI update
-        note.isFavorite.toggle()
-        
-        // Update in local arrays
+    private func removeNoteLocally(_ id: UUID) {
+        notes.removeAll { $0.id == id }
+        allNotes.removeAll { $0.id == id }
+    }
+    
+    private func replaceNoteLocally(_ note: NoteItem) {
         if let index = notes.firstIndex(where: { $0.id == note.id }) {
             notes[index] = note
         }
         if let index = allNotes.firstIndex(where: { $0.id == note.id }) {
             allNotes[index] = note
         }
+    }
+    
+    /// The offline queue changed a note on the server: show the result,
+    /// unless newer local edits are still waiting.
+    private func applyQueueEvent(_ event: NoteQueueEvent) {
+        switch event {
+        case .saved(let saved):
+            guard !SyncQueueManager.shared.hasPendingNoteOperation(for: saved.id) else { return }
+            if allNotes.contains(where: { $0.id == saved.id }) {
+                replaceNoteLocally(saved)
+            } else {
+                allNotes.insert(saved, at: 0)
+            }
+            applyFilter()
+        case .removed(let id):
+            removeNoteLocally(id)
+        case .recovered(let originalId, let copy):
+            removeNoteLocally(originalId)
+            if !allNotes.contains(where: { $0.id == copy.id }) {
+                allNotes.insert(copy, at: 0)
+            }
+            applyFilter()
+        }
+    }
+    
+    private func toggleFavorite(_ note: NoteItem) {
+        HapticManager.shared.selection()
         
-        // Save to server in background
+        // Optimistic UI update
+        note.isFavorite.toggle()
+        let isFavorite = note.isFavorite
+        replaceNoteLocally(note)
+        
+        // Send only the flag. This list copy may be stale, so it must never
+        // resend the note's title or content.
         Task {
             do {
-                let updatedNote = try await APIService.shared.updateNote(note)
+                let result = try await APIService.shared.saveDocument(
+                    id: note.id,
+                    title: nil,
+                    content: nil,
+                    isFavorite: isFavorite,
+                    baseRevisionId: note.headRevisionId
+                )
                 
                 await MainActor.run {
-                    // Update with server response
-                    if let index = self.notes.firstIndex(where: { $0.id == note.id }) {
-                        self.notes[index] = updatedNote
+                    if SyncQueueManager.shared.hasPendingNoteOperation(for: note.id) {
+                        // Keep the local, not yet synced text on screen.
+                        note.isFavorite = result.note.isFavorite
+                        replaceNoteLocally(note)
+                    } else {
+                        replaceNoteLocally(result.note)
                     }
-                    if let index = self.allNotes.firstIndex(where: { $0.id == note.id }) {
-                        self.allNotes[index] = updatedNote
-                    }
+                    applyFilter()
                 }
             } catch {
                 await MainActor.run {
                     // Revert optimistic update on error
-                    note.isFavorite.toggle()
-                    if let index = self.notes.firstIndex(where: { $0.id == note.id }) {
-                        self.notes[index] = note
-                    }
-                    if let index = self.allNotes.firstIndex(where: { $0.id == note.id }) {
-                        self.allNotes[index] = note
-                    }
+                    note.isFavorite = !isFavorite
+                    replaceNoteLocally(note)
                     self.errorMessage = "Failed to update favorite status"
                     HapticManager.shared.error()
                 }
@@ -555,6 +608,8 @@ struct NotesView: View {
     private func mergeFetchedNotesWithLocalEdits(_ fetchedNotes: [NoteItem]) -> [NoteItem] {
         let pendingPayloads = SyncQueueManager.shared.getPendingNotePayloads()
         let pendingNoteIds = Set(pendingPayloads.keys)
+        let pendingDeletions = SyncQueueManager.shared.pendingNoteDeletions()
+        let fetchedNotes = fetchedNotes.filter { !pendingDeletions.contains($0.id) }
         
         // If no pending changes, return fetched notes as-is
         guard !pendingNoteIds.isEmpty else {
@@ -604,70 +659,63 @@ struct NotesView: View {
         return mergedNotes
     }
     
-    private func saveNoteUpdate(_ note: NoteItem) {
-        let isExistingNote = allNotes.contains(where: { $0.id == note.id })
-        let operationType = isExistingNote ? "update" : "create"
-        
+    /// Creates a note under its local ID, so the server keeps it and a
+    /// replay of a queued create cannot duplicate it.
+    private func createNote(_ note: NoteItem) {
         // Update UI immediately (optimistic update)
-        if !isExistingNote {
-            self.allNotes.insert(note, at: 0)
-            self.applyFilter()
-        } else {
-            if let index = self.notes.firstIndex(where: { $0.id == note.id }) {
-                self.notes[index] = note
-            }
-            if let index = self.allNotes.firstIndex(where: { $0.id == note.id }) {
-                self.allNotes[index] = note
-            }
-        }
+        allNotes.insert(note, at: 0)
+        applyFilter()
         
-        // Update cache will happen on next successful API fetch
-        // For now, the UI is already updated optimistically above
-        
-        // Save to server in background
         Task {
-            if NetworkMonitor.shared.isConnected {
-                // Online - try to save immediately
-                do {
-                    let savedNote: NoteItem
-                    
-                    if !isExistingNote {
-                        savedNote = try await APIService.shared.saveNote(note)
-                    } else {
-                        savedNote = try await APIService.shared.updateNote(note)
-                    }
-                    
-                    await MainActor.run {
-                        // Update with server response
-                        if let index = self.notes.firstIndex(where: { $0.id == note.id }) {
-                            self.notes[index] = savedNote
-                        }
-                        if let index = self.allNotes.firstIndex(where: { $0.id == note.id }) {
-                            self.allNotes[index] = savedNote
-                        }
-                    }
-                } catch {
-                    // Failed while online - queue for retry
-                    SyncQueueManager.shared.queueNoteOperation(type: operationType, note: note)
+            guard NetworkMonitor.shared.isConnected else {
+                SyncQueueManager.shared.queueNoteOperation(type: "create", note: note, baseRevisionId: nil)
+                return
+            }
+            do {
+                let created = try await APIService.shared.createDocument(note)
+                await MainActor.run {
+                    replaceNoteLocally(created)
                 }
-            } else {
-                // Offline - queue operation
-                SyncQueueManager.shared.queueNoteOperation(type: operationType, note: note)
+            } catch {
+                // Never lose a new note: the queue retries the create (it is
+                // idempotent) and keeps it if the server refuses.
+                AppLogger.notes.error(
+                    "Note create failed and was queued: \(error.localizedDescription, privacy: .public)"
+                )
+                SyncQueueManager.shared.queueNoteOperation(type: "create", note: note, baseRevisionId: nil)
             }
         }
     }
 
+    /// Saves an edit from the editor on top of `baseRevisionId`, the
+    /// revision its edits started from.
     @MainActor
-    private func saveExistingNoteUpdate(_ note: NoteItem) async -> NoteSaveOutcome {
-        if let index = notes.firstIndex(where: { $0.id == note.id }) {
-            notes[index] = note
-        }
-        if let index = allNotes.firstIndex(where: { $0.id == note.id }) {
-            allNotes[index] = note
+    private func saveExistingNoteUpdate(_ note: NoteItem, baseRevisionId: String?) async -> NoteSaveOutcome {
+        replaceNoteLocally(note)
+
+        // Created offline and not on the server yet: send the create, with
+        // these edits folded in.
+        if SyncQueueManager.shared.hasPendingCreate(for: note.id) {
+            SyncQueueManager.shared.queueNoteOperation(type: "update", note: note, baseRevisionId: baseRevisionId)
+            guard NetworkMonitor.shared.isConnected else { return .queued }
+            do {
+                guard let result = try await SyncQueueManager.shared.pushPendingCreate(for: note.id) else {
+                    return .queued
+                }
+                replaceNoteLocally(result.note)
+                return .saved(result)
+            } catch APIError.networkError {
+                return .queued
+            } catch {
+                AppLogger.notes.error(
+                    "Queued note create failed: \(error.localizedDescription, privacy: .public)"
+                )
+                return .failed
+            }
         }
 
         guard NetworkMonitor.shared.isConnected else {
-            SyncQueueManager.shared.queueNoteOperation(type: "update", note: note)
+            SyncQueueManager.shared.queueNoteOperation(type: "update", note: note, baseRevisionId: baseRevisionId)
             AppLogger.notes.notice(
                 "Queued offline note update for \(note.id.uuidString, privacy: .public)"
             )
@@ -675,23 +723,49 @@ struct NotesView: View {
         }
 
         do {
-            let savedNote = try await APIService.shared.updateNote(note)
-            if let index = notes.firstIndex(where: { $0.id == note.id }) {
-                notes[index] = savedNote
-            }
-            if let index = allNotes.firstIndex(where: { $0.id == note.id }) {
-                allNotes[index] = savedNote
-            }
-            AppLogger.notes.info(
-                "Saved note \(note.id.uuidString, privacy: .public)"
+            let result = try await APIService.shared.saveDocument(
+                id: note.id,
+                title: note.title ?? "",
+                content: note.content,
+                isFavorite: nil,
+                baseRevisionId: baseRevisionId
             )
-            return .saved(savedNote)
-        } catch {
-            SyncQueueManager.shared.queueNoteOperation(type: "update", note: note)
-            AppLogger.notes.error(
-                "Note update failed and was queued: \(error.localizedDescription, privacy: .public)"
+            replaceNoteLocally(result.note)
+            AppLogger.notes.info(
+                "Saved note \(note.id.uuidString, privacy: .public) (merged: \(result.merged, privacy: .public), conflicts: \(result.conflicts, privacy: .public))"
+            )
+            return .saved(result)
+        } catch APIError.networkError {
+            SyncQueueManager.shared.queueNoteOperation(type: "update", note: note, baseRevisionId: baseRevisionId)
+            AppLogger.notes.notice(
+                "Note update could not reach the server and was queued"
             )
             return .queued
+        } catch let error as APIError where error.statusCode == 404 && baseRevisionId == nil {
+            // Never synced: its create may still be on its way. Creating it
+            // under the same ID is idempotent.
+            do {
+                let result = try await APIService.shared.createOrReplayDocument(note)
+                replaceNoteLocally(result.note)
+                return .saved(result)
+            } catch APIError.networkError {
+                SyncQueueManager.shared.queueNoteOperation(type: "create", note: note, baseRevisionId: nil)
+                return .queued
+            } catch {
+                return .failed
+            }
+        } catch let error as APIError where error.statusCode == 404 {
+            AppLogger.notes.notice(
+                "Note \(note.id.uuidString, privacy: .public) was deleted on another device"
+            )
+            SyncQueueManager.shared.discardPendingNoteOperations(for: note.id)
+            removeNoteLocally(note.id)
+            return .deleted
+        } catch {
+            AppLogger.notes.error(
+                "Note update failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return .failed
         }
     }
     
