@@ -298,7 +298,7 @@ struct NotesView: View {
         }
         // The navigation container background keeps the search field drawn correctly.
         .containerBackground(Theme.background, for: .navigation)
-        .contentMargins(.bottom, 12, for: .scrollContent)
+        .tabBarContentMargin()
         .overlay {
             if notes.isEmpty && !isLoading {
                 emptyStateView
@@ -354,6 +354,7 @@ struct NotesView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .tabBarContentMargin()
         .overlay {
             if notes.isEmpty && !isLoading {
                 emptyStateView

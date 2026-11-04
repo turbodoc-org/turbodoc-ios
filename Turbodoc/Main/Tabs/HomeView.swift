@@ -353,7 +353,7 @@ struct HomeView: View {
         }
         // The navigation container background keeps the search field drawn correctly.
         .containerBackground(Theme.background, for: .navigation)
-        .contentMargins(.bottom, 12, for: .scrollContent)
+        .tabBarContentMargin()
         .overlay {
             if bookmarks.isEmpty && !isLoading {
                 emptyStateView
@@ -388,6 +388,7 @@ struct HomeView: View {
             }
         }
         .listStyle(.plain)
+        .tabBarContentMargin()
         .overlay {
             if bookmarks.isEmpty && !isLoading {
                 emptyStateView

@@ -21,6 +21,7 @@ struct ProfileView: View {
                 }
                 .padding(.bottom, 32)
             }
+            .tabBarContentMargin()
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Profile")
             .refreshable {
