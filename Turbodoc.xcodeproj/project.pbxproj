@@ -24,6 +24,13 @@
 			remoteGlobalIDString = F38CA8872E39F4570032E012;
 			remoteInfo = ShareExtension;
 		};
+		A7C1D0E12EB9A00100F0A001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F373AE432E279E2B003A9876 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F373AE4A2E279E2B003A9876;
+			remoteInfo = Turbodoc;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -43,6 +50,7 @@
 /* Begin PBXFileReference section */
 		F373AE4B2E279E2B003A9876 /* Turbodoc.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Turbodoc.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F38CA8882E39F4570032E012 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A7C1D0E12EB9A00100F0A002 /* TurbodocTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TurbodocTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -81,6 +89,11 @@
 			path = ShareExtension;
 			sourceTree = "<group>";
 		};
+		A7C1D0E12EB9A00100F0A003 /* TurbodocTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = TurbodocTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -104,6 +117,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A7C1D0E12EB9A00100F0A004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -119,6 +139,7 @@
 			children = (
 				F373AE4D2E279E2B003A9876 /* Turbodoc */,
 				F38CA8892E39F4570032E012 /* ShareExtension */,
+				A7C1D0E12EB9A00100F0A003 /* TurbodocTests */,
 				F34794522E28F0A600F21D47 /* Frameworks */,
 				F373AE4C2E279E2B003A9876 /* Products */,
 			);
@@ -129,6 +150,7 @@
 			children = (
 				F373AE4B2E279E2B003A9876 /* Turbodoc.app */,
 				F38CA8882E39F4570032E012 /* ShareExtension.appex */,
+				A7C1D0E12EB9A00100F0A002 /* TurbodocTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -188,6 +210,29 @@
 			productReference = F38CA8882E39F4570032E012 /* ShareExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		A7C1D0E12EB9A00100F0A007 /* TurbodocTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A7C1D0E12EB9A00100F0A00B /* Build configuration list for PBXNativeTarget "TurbodocTests" */;
+			buildPhases = (
+				A7C1D0E12EB9A00100F0A006 /* Sources */,
+				A7C1D0E12EB9A00100F0A004 /* Frameworks */,
+				A7C1D0E12EB9A00100F0A005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A7C1D0E12EB9A00100F0A008 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A7C1D0E12EB9A00100F0A003 /* TurbodocTests */,
+			);
+			name = TurbodocTests;
+			packageProductDependencies = (
+			);
+			productName = TurbodocTests;
+			productReference = A7C1D0E12EB9A00100F0A002 /* TurbodocTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -203,6 +248,10 @@
 					};
 					F38CA8872E39F4570032E012 = {
 						CreatedOnToolsVersion = 16.4;
+					};
+					A7C1D0E12EB9A00100F0A007 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = F373AE4A2E279E2B003A9876;
 					};
 				};
 			};
@@ -225,6 +274,7 @@
 			targets = (
 				F373AE4A2E279E2B003A9876 /* Turbodoc */,
 				F38CA8872E39F4570032E012 /* ShareExtension */,
+				A7C1D0E12EB9A00100F0A007 /* TurbodocTests */,
 			);
 		};
 /* End PBXProject section */
@@ -238,6 +288,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F38CA8862E39F4570032E012 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7C1D0E12EB9A00100F0A005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -261,6 +318,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A7C1D0E12EB9A00100F0A006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -268,6 +332,11 @@
 			isa = PBXTargetDependency;
 			target = F38CA8872E39F4570032E012 /* ShareExtension */;
 			targetProxy = F38CA8902E39F4570032E012 /* PBXContainerItemProxy */;
+		};
+		A7C1D0E12EB9A00100F0A008 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F373AE4A2E279E2B003A9876 /* Turbodoc */;
+			targetProxy = A7C1D0E12EB9A00100F0A001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -537,6 +606,46 @@
 			};
 			name = Release;
 		};
+		A7C1D0E12EB9A00100F0A009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
+				DEVELOPMENT_TEAM = 7NA9PJ7WYB;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.5.4;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.turbodoc.ios.TurbodocAppTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Turbodoc.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Turbodoc";
+			};
+			name = Debug;
+		};
+		A7C1D0E12EB9A00100F0A00A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
+				DEVELOPMENT_TEAM = 7NA9PJ7WYB;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.5.4;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.turbodoc.ios.TurbodocAppTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Turbodoc.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Turbodoc";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -563,6 +672,15 @@
 			buildConfigurations = (
 				F38CA8942E39F4570032E012 /* Debug */,
 				F38CA8952E39F4570032E012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A7C1D0E12EB9A00100F0A00B /* Build configuration list for PBXNativeTarget "TurbodocTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7C1D0E12EB9A00100F0A009 /* Debug */,
+				A7C1D0E12EB9A00100F0A00A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

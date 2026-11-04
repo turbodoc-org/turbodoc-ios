@@ -38,14 +38,28 @@ final class SyncOperation {
 
 // MARK: - Codable Payloads
 
+/// Queued note change. Operations queued by older builds may still be stored,
+/// so every field is optional and new fields must stay optional.
 struct NoteOperationPayload: Codable {
-    let id: UUID?
-    let title: String?
-    let content: String?
-    let tags: [String]?
-    let isFavorite: Bool?
-    let version: Int?
-    let headRevisionId: String?
+    var id: UUID?
+    var title: String?
+    var content: String?
+    var tags: [String]?
+    var isFavorite: Bool?
+    var version: Int?
+    /// The revision these edits started from (`base_revision_id`). Stored
+    /// under its original key so payloads from older builds still decode.
+    /// With a nil base the server overwrites instead of merging; history
+    /// keeps the previous version.
+    var headRevisionId: String?
+    /// ID of the "(recovered)" copy, fixed once chosen so recreating a note
+    /// that was deleted on the server is safe to retry.
+    var recoveryId: UUID?
+
+    var baseRevisionId: String? {
+        get { headRevisionId }
+        set { headRevisionId = newValue }
+    }
 }
 
 struct BookmarkOperationPayload: Codable {
