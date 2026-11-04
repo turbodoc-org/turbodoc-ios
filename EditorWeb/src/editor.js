@@ -11,14 +11,22 @@ import { $prose, replaceAll } from '@milkdown/kit/utils'
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame.css'
 import './editor.css'
+import { preserveSourceFormatting } from './preserve-formatting.js'
+import { fullText, mapTextOffset, positionAtTextOffset, textOffsetAt } from './text-offset.js'
 
 const post = (handler, payload = {}) => {
   window.webkit?.messageHandlers?.[handler]?.postMessage(payload)
 }
 
 const root = document.querySelector('#editor')
-let lastMarkdown = ''
-let applyingNativeUpdate = false
+// The Markdown Swift last loaded (`source`) and the editor's serialisation of
+// it (`loaded`). Edits are posted in the source's own formatting.
+let baseline = { source: '', loaded: '' }
+// The Markdown Swift holds: the last value it set or this editor posted.
+let lastPosted = ''
+// True once Swift has loaded a note. Before that the editor's content is not
+// the note's and must never be reported as it.
+let hasLoaded = false
 
 const graphemeCount = (text) => {
   if (typeof Intl.Segmenter === 'function') {
@@ -279,10 +287,16 @@ crepe.editor
   .use(historyStatePlugin)
 
 crepe.on((listener) => {
-  listener.markdownUpdated((_, markdown, previousMarkdown) => {
-    lastMarkdown = markdown
-    if (applyingNativeUpdate || markdown === previousMarkdown) return
-    post('turbodocMarkdown', { markdown })
+  // Debounced by Milkdown, so it also fires ~200 ms after `setMarkdown` with
+  // the editor's re-serialisation of a note nobody edited. Mapping back to
+  // the source's formatting turns that echo into the source itself, which is
+  // not posted: opening a note never saves it.
+  listener.markdownUpdated((_, markdown) => {
+    if (!hasLoaded) return
+    const stored = preserveSourceFormatting(baseline.source, baseline.loaded, markdown)
+    if (stored === lastPosted) return
+    lastPosted = stored
+    post('turbodocMarkdown', { markdown: stored })
   })
 })
 
@@ -291,34 +305,65 @@ const scrollToTop = () => {
   document.scrollingElement?.scrollTo(0, 0)
 }
 
-const setMarkdown = (markdown, shouldScrollToTop = false) => {
-  const value = typeof markdown === 'string' ? markdown : ''
-  if (value === lastMarkdown) return
+const clampedSelection = (doc, pos) =>
+  TextSelection.near(doc.resolve(Math.max(0, Math.min(pos, doc.content.size))))
 
-  applyingNativeUpdate = true
+const setMarkdown = (markdown, isFirstLoad = false) => {
+  const value = typeof markdown === 'string' ? markdown : ''
+  if (value === lastPosted && !isFirstLoad) return
+
+  const view = getView()
+  const hadFocus = view.hasFocus()
+  const { from, to } = view.state.selection
+  const anchorOffset = textOffsetAt(view.state.doc, from)
+  const headOffset = textOffsetAt(view.state.doc, to)
+  const textBefore = hadFocus ? fullText(view.state.doc) : ''
+  const scrollY = window.scrollY
+
   // Flush so the new document starts a fresh undo history: undoing right
   // after opening a note must not wipe it, and restores can't be undone into
   // a half-merged state.
   crepe.editor.action(replaceAll(value, true))
-  lastMarkdown = value
+  // A flushed replaceAll installs a fresh state without running plugins'
+  // appendTransaction, so normalisations (such as the empty paragraph after
+  // a trailing list) would land on the next transaction and look like an
+  // edit. Run them now, outside the undo history.
+  view.dispatch(view.state.tr.setMeta('addToHistory', false))
+  // ProseMirror applies transactions synchronously, so this is the editor's
+  // serialisation of exactly `value`.
+  baseline = { source: value, loaded: crepe.getMarkdown() }
+  lastPosted = value
+  hasLoaded = true
 
-  if (shouldScrollToTop) {
-    crepe.editor.action((ctx) => {
-      const view = ctx.get(editorViewCtx)
-      view.dispatch(
-        view.state.tr.setSelection(TextSelection.atStart(view.state.doc))
-      )
-    })
+  if (isFirstLoad) {
+    view.dispatch(view.state.tr.setSelection(TextSelection.atStart(view.state.doc)))
     scrollToTop()
     requestAnimationFrame(() => {
       scrollToTop()
       requestAnimationFrame(scrollToTop)
     })
+    return
   }
 
-  queueMicrotask(() => {
-    applyingNativeUpdate = false
-  })
+  // Content from another device: keep the caret and the scroll position
+  // roughly where they were.
+  if (hadFocus) {
+    const { doc } = view.state
+    const textAfter = fullText(doc)
+    const anchor = positionAtTextOffset(doc, mapTextOffset(anchorOffset, textBefore, textAfter))
+    const head = positionAtTextOffset(doc, mapTextOffset(headOffset, textBefore, textAfter))
+    const selection =
+      anchor === head
+        ? clampedSelection(doc, anchor)
+        : TextSelection.between(clampedSelection(doc, anchor).$anchor, clampedSelection(doc, head).$head)
+    view.dispatch(view.state.tr.setSelection(selection))
+    // A flushed replaceAll swaps the whole editor state and DOM, which drops
+    // focus (and would hide the keyboard).
+    view.focus()
+  }
+  const restoreScroll = () => window.scrollTo(0, scrollY)
+  restoreScroll()
+  requestAnimationFrame(restoreScroll)
 }
 
 const setAppearance = (appearance) => {
@@ -326,8 +371,22 @@ const setAppearance = (appearance) => {
     appearance === 'dark' ? 'dark' : 'light'
 }
 
+// Posts edits the debounced listener has not posted yet and returns the
+// Markdown Swift now holds, so Swift can decide on server content without
+// losing the last keystrokes.
+const flush = () => {
+  if (!hasLoaded) return null
+  const stored = preserveSourceFormatting(baseline.source, baseline.loaded, crepe.getMarkdown())
+  if (stored !== lastPosted) {
+    lastPosted = stored
+    post('turbodocMarkdown', { markdown: stored })
+  }
+  return stored
+}
+
 window.turbodocEditor = {
   setMarkdown,
+  flush,
   setAppearance,
   getMarkdown: () => crepe.getMarkdown(),
   undo: () => {

@@ -20,6 +20,26 @@ final class MarkdownEditorController {
         evaluate("window.turbodocEditor.redo();")
     }
 
+    /// The editor posts edits after a short debounce. This returns the
+    /// Markdown it holds right now (posting it as usual if it changed), or
+    /// nil when the editor is not loaded.
+    func flushPendingEdits() async -> String? {
+        guard let webView else { return nil }
+        // The completion-handler form: the async one traps on a nil result.
+        return await withCheckedContinuation { continuation in
+            webView.evaluateJavaScript(
+                "window.turbodocEditor ? window.turbodocEditor.flush() : null"
+            ) { result, error in
+                if let error {
+                    AppLogger.editor.error(
+                        "Editor flush failed: \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+                continuation.resume(returning: result as? String)
+            }
+        }
+    }
+
     private func evaluate(_ script: String) {
         webView?.evaluateJavaScript(script) { _, error in
             if let error {

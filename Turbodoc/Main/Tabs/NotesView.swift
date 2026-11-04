@@ -187,7 +187,7 @@ struct NotesView: View {
                     onSave: { updatedNote, baseRevisionId in
                         await saveExistingNoteUpdate(updatedNote, baseRevisionId: baseRevisionId)
                     },
-                    onRestore: { restoredNote in
+                    onServerUpdate: { restoredNote in
                         if let index = notes.firstIndex(where: { $0.id == restoredNote.id }) {
                             notes[index] = restoredNote
                         }

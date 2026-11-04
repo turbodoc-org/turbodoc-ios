@@ -41,21 +41,26 @@ struct EditNoteView: View {
     @State private var wasDeletedElsewhere = false
     @State private var showingDeletedElsewhere = false
     @State private var editorController = MarkdownEditorController()
+    /// Highest version another device's save was reported at.
+    @State private var latestRemoteVersion = 0
     
     /// Saves a snapshot of the note on top of the given base revision.
     let onSave: (NoteItem, String?) async -> NoteSaveOutcome
-    let onRestore: (NoteItem) -> Void
+    /// A newer server version was loaded (restore, or another device's edit).
+    let onServerUpdate: (NoteItem) -> Void
     let onFinish: () -> Void
     let onDelete: (NoteItem) -> Void
     /// Saves the draft as a new note (after it was deleted elsewhere).
     let onKeepCopy: (NoteItem) -> Void
     
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var authService: AuthenticationService
     
     init(
         note: NoteItem,
         onSave: @escaping (NoteItem, String?) async -> NoteSaveOutcome,
-        onRestore: @escaping (NoteItem) -> Void,
+        onServerUpdate: @escaping (NoteItem) -> Void,
         onFinish: @escaping () -> Void,
         onDelete: @escaping (NoteItem) -> Void,
         onKeepCopy: @escaping (NoteItem) -> Void
@@ -63,7 +68,7 @@ struct EditNoteView: View {
         self._note = State(initialValue: note)
         self._synced = State(initialValue: SyncedState(note))
         self.onSave = onSave
-        self.onRestore = onRestore
+        self.onServerUpdate = onServerUpdate
         self.onFinish = onFinish
         self.onDelete = onDelete
         self.onKeepCopy = onKeepCopy
@@ -166,6 +171,15 @@ struct EditNoteView: View {
         .onAppear {
             takeOwnership()
         }
+        .task(id: note.id) {
+            await followOtherDevices()
+        }
+        .onChange(of: scenePhase) {
+            // Back from the background: catch up on edits made meanwhile.
+            if scenePhase == .active {
+                Task { await loadServerVersion() }
+            }
+        }
         .onReceive(NetworkMonitor.shared.connectionStatusChanged) { isConnected in
             // Back online: this editor sends its own unsynced edits.
             guard isConnected, needsSave, !wasDeletedElsewhere else { return }
@@ -223,6 +237,82 @@ struct EditNoteView: View {
         }
     }
     
+    /// Loads other devices' edits while the note is open. Ends when the view
+    /// goes away, which also closes the Realtime channel.
+    private func followOtherDevices() async {
+        // The list's copy may be older than the server's.
+        await loadServerVersion()
+        
+        for await event in authService.noteUpdates(id: note.id) {
+            switch event {
+            case .updated(let version):
+                // Echoes of this editor's own saves are already in `synced`.
+                if let version {
+                    latestRemoteVersion = max(latestRemoteVersion, version)
+                    guard version > synced.version else { continue }
+                }
+                await loadServerVersion()
+            case .resubscribed:
+                // Saves made while disconnected were not reported.
+                await loadServerVersion()
+            }
+        }
+    }
+    
+    /// Fetches the note and loads it if the editor is idle. With unsaved
+    /// edits, or a save in flight, the editor keeps its text and its base:
+    /// the next save merges with the newer version instead.
+    @MainActor
+    private func loadServerVersion() async {
+        guard
+            !wasDeletedElsewhere,
+            !isRestoring,
+            !hasQueuedEdits,
+            NetworkMonitor.shared.isConnected
+        else { return }
+        
+        let remote: NoteItem
+        do {
+            remote = try await APIService.shared.fetchDocument(id: note.id)
+        } catch let error as APIError where error.statusCode == 404 {
+            // Without a revision the note may simply not be created yet.
+            guard synced.revisionId != nil, !isSaving, !wasDeletedElsewhere, !didDelete else { return }
+            wasDeletedElsewhere = true
+            debounceTask?.cancel()
+            debounceTask = nil
+            showingDeletedElsewhere = true
+            return
+        } catch {
+            AppLogger.notes.error(
+                "Could not load the latest note: \(error.localizedDescription, privacy: .public)"
+            )
+            return
+        }
+        
+        latestRemoteVersion = max(latestRemoteVersion, remote.version)
+        await takeUnpostedEdits()
+        guard
+            !hasQueuedEdits,
+            let decision = NoteSync.onRemote(
+                remote: ServerDocument(remote),
+                synced: synced,
+                latest: draft,
+                saving: isSaving
+            )
+        else { return }
+        
+        synced = decision.synced
+        if let adopt = decision.adopt {
+            applyServerDraft(adopt)
+        }
+        note.headRevisionId = remote.headRevisionId
+        note.version = remote.version
+        note.updatedAt = remote.updatedAt
+        note.isFavorite = remote.isFavorite
+        note.tags = remote.tags
+        onServerUpdate(remote)
+    }
+    
     private func draftChanged() {
         guard !isRestoring, !wasDeletedElsewhere else { return }
         guard needsSave else {
@@ -266,6 +356,7 @@ struct EditNoteView: View {
         
         switch outcome {
         case .saved(let result):
+            await takeUnpostedEdits()
             let decision = NoteSync.afterSave(
                 sent: sent,
                 latest: draft,
@@ -309,7 +400,22 @@ struct EditNoteView: View {
         if savedToServer && needsSave {
             return await saveIfNeeded()
         }
+        // Another device saved while this save was in flight and the
+        // response did not include it: load it now that the editor is idle.
+        if savedToServer && latestRemoteVersion > synced.version {
+            Task { await loadServerVersion() }
+        }
         return savedToServer
+    }
+    
+    /// Typing from the last fraction of a second may not have reached Swift
+    /// yet. Take it before deciding whether server content may replace the
+    /// editor's.
+    @MainActor
+    private func takeUnpostedEdits() async {
+        if let markdown = await editorController.flushPendingEdits(), markdown != note.content {
+            note.content = markdown
+        }
     }
     
     /// Loads the server's version into the editor. `synced` already matches
@@ -363,7 +469,7 @@ struct EditNoteView: View {
         hasQueuedEdits = false
         note = restored
         setSaveStatus(.saved)
-        onRestore(restored)
+        onServerUpdate(restored)
         showingHistory = false
         return restored
     }
