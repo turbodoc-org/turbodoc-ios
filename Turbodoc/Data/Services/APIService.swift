@@ -258,6 +258,28 @@ class APIService {
         }
     }
 
+    /// Creates the note under its local ID. If it already exists (a replay
+    /// of a create that reached the server), the note's text is saved on top
+    /// of the stored version.
+    func createOrReplayDocument(_ note: NoteItem) async throws -> DocumentSaveResult {
+        let created = try await createDocument(note)
+        guard NoteDraft(created) != NoteDraft(note) else {
+            return DocumentSaveResult(
+                note: created,
+                merged: false,
+                conflicts: 0,
+                submittedRevisionId: created.headRevisionId
+            )
+        }
+        return try await saveDocument(
+            id: note.id,
+            title: note.title ?? "",
+            content: note.content,
+            isFavorite: nil,
+            baseRevisionId: created.headRevisionId
+        )
+    }
+
     /// Saves edits made on top of `baseRevisionId`. The server merges them
     /// with anything saved since that revision. Pass nil for a field that
     /// did not change: omitted fields are left as they are on the server.

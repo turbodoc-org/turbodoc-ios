@@ -477,23 +477,7 @@ final class SyncQueueManager {
     /// reached the server returns the stored document; the queued text is
     /// then saved on top of it.
     private func pushCreate(noteId: UUID, payload: NoteOperationPayload) async throws -> DocumentSaveResult {
-        let note = payload.makeNote(id: noteId)
-        let created = try await APIService.shared.createDocument(note)
-        guard NoteDraft(created) != NoteDraft(note) else {
-            return DocumentSaveResult(
-                note: created,
-                merged: false,
-                conflicts: 0,
-                submittedRevisionId: created.headRevisionId
-            )
-        }
-        return try await APIService.shared.saveDocument(
-            id: noteId,
-            title: note.title ?? "",
-            content: note.content,
-            isFavorite: nil,
-            baseRevisionId: created.headRevisionId
-        )
+        try await APIService.shared.createOrReplayDocument(payload.makeNote(id: noteId))
     }
 
     /// The request for an operation succeeded. If newer edits were collapsed

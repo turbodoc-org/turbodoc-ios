@@ -741,6 +741,19 @@ struct NotesView: View {
                 "Note update could not reach the server and was queued"
             )
             return .queued
+        } catch let error as APIError where error.statusCode == 404 && baseRevisionId == nil {
+            // Never synced: its create may still be on its way. Creating it
+            // under the same ID is idempotent.
+            do {
+                let result = try await APIService.shared.createOrReplayDocument(note)
+                replaceNoteLocally(result.note)
+                return .saved(result)
+            } catch APIError.networkError {
+                SyncQueueManager.shared.queueNoteOperation(type: "create", note: note, baseRevisionId: nil)
+                return .queued
+            } catch {
+                return .failed
+            }
         } catch let error as APIError where error.statusCode == 404 {
             AppLogger.notes.notice(
                 "Note \(note.id.uuidString, privacy: .public) was deleted on another device"
