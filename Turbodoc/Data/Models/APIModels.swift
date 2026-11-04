@@ -118,17 +118,13 @@ struct APIUserResponse: Codable {
     let updated_at: String
     
     func toUser() -> User {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'"
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        
         let user = User(id: id, email: email, name: name)
         
-        if let createdDate = formatter.date(from: created_at) {
+        if let createdDate = Date(apiTimestamp: created_at) {
             user.createdAt = createdDate
         }
         
-        if let updatedDate = formatter.date(from: updated_at) {
+        if let updatedDate = Date(apiTimestamp: updated_at) {
             user.updatedAt = updatedDate
         }
         
@@ -216,16 +212,11 @@ struct APINoteResponse: Codable {
             note.id = uuid
         }
         
-        // Parse timestamps
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'"
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        
-        if let createdDate = formatter.date(from: created_at) {
+        if let createdDate = Date(apiTimestamp: created_at) {
             note.createdAt = createdDate
         }
         
-        if let updatedDate = formatter.date(from: updated_at) {
+        if let updatedDate = Date(apiTimestamp: updated_at) {
             note.updatedAt = updatedDate
         }
         
@@ -313,4 +304,29 @@ struct APIUserStats: Codable {
     let tag_count: Int
     let favorite_count: Int
     let member_since: String?
+}
+
+extension Date {
+    /// Parses Postgres/Supabase timestamps such as
+    /// "2026-11-03T22:06:44.682253+00:00" or "2026-11-03T22:06:44Z".
+    /// Fractional seconds are trimmed to milliseconds, the precision
+    /// ISO8601DateFormatter supports.
+    init?(apiTimestamp: String) {
+        var value = apiTimestamp.replacingOccurrences(of: " ", with: "T")
+        if let dot = value.firstIndex(of: ".") {
+            let fractionEnd = value[dot...].dropFirst().firstIndex { !$0.isNumber } ?? value.endIndex
+            let digits = value[value.index(after: dot)..<fractionEnd]
+            value.replaceSubrange(value.index(after: dot)..<fractionEnd, with: String(digits.prefix(3)))
+        }
+        
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) {
+            self = date
+            return
+        }
+        formatter.formatOptions = [.withInternetDateTime]
+        guard let date = formatter.date(from: value) else { return nil }
+        self = date
+    }
 }

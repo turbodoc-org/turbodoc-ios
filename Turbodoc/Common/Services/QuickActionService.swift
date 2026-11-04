@@ -4,6 +4,8 @@ import Combine
 enum QuickAction: String {
     case newBookmark
     case newNote
+    case newVoiceNote
+    case newPhotoNote
     case search
 }
 

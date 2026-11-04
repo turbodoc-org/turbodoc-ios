@@ -4,7 +4,8 @@ struct FilterPill: View {
     let title: String
     let count: Int?
     let isSelected: Bool
-    var tint: Color = .blue
+    /// `nil` for the standard ink chip; a color (e.g. red for Broken) tints it.
+    var tint: Color? = nil
     let action: () -> Void
     
     var body: some View {
@@ -12,26 +13,41 @@ struct FilterPill: View {
             HapticManager.shared.selection()
             action()
         }) {
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 Text(title)
-                    .font(.subheadline)
-                    .fontWeight(isSelected ? .semibold : .regular)
+                    .fontWeight(isSelected ? .semibold : .medium)
                 
-                if let count = count, count > 0 {
-                    Text("(\(count))")
-                        .font(.caption)
+                if let count {
+                    Text("\(count)")
                         .fontWeight(.medium)
+                        .foregroundStyle(countStyle)
+                        .monospacedDigit()
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(
-                isSelected ? tint : Color(.systemGray6)
-            )
-            .foregroundColor(isSelected ? .white : .primary)
-            .clipShape(Capsule())
+            .font(.subheadline)
+            .padding(.horizontal, 14)
+            .frame(height: 34)
+            .foregroundStyle(foreground)
+            .background(background, in: Capsule())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+    
+    private var foreground: Color {
+        if isSelected { return tint == nil ? Theme.background : .white }
+        return tint ?? .primary
+    }
+    
+    private var background: Color {
+        if isSelected { return tint ?? .primary }
+        return tint?.opacity(0.12) ?? Theme.surfaceSecondary
+    }
+    
+    private var countStyle: Color {
+        if isSelected || tint != nil { return foreground.opacity(0.7) }
+        return Theme.faint
     }
 }
 
@@ -44,9 +60,9 @@ struct FilterPillsBar: View {
         let id: String
         let title: String
         let count: Int?
-        let tint: Color
+        let tint: Color?
         
-        init(id: String, title: String, count: Int? = nil, tint: Color = .blue) {
+        init(id: String, title: String, count: Int? = nil, tint: Color? = nil) {
             self.id = id
             self.title = title
             self.count = count
@@ -69,7 +85,7 @@ struct FilterPillsBar: View {
     }
     
     private var pills: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             ForEach(filters) { filter in
                 FilterPill(
                     title: filter.title,
@@ -83,7 +99,8 @@ struct FilterPillsBar: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

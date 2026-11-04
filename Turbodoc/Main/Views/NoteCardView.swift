@@ -1,100 +1,170 @@
 import SwiftUI
 
+/// Gallery card: a "paper" preview of the note's Markdown on top, title and
+/// date below.
 struct NoteCardView: View {
     let note: NoteItem
     let onEdit: (NoteItem) -> Void
     let onDelete: (NoteItem) -> Void
     let onToggleFavorite: (NoteItem) -> Void
-    
+
     var body: some View {
         Button {
             onEdit(note)
         } label: {
-            cardContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .aspectRatio(1, contentMode: .fit) // Keep square aspect ratio
-                .background(cardBackground)
+            VStack(alignment: .leading, spacing: 10) {
+                paper
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.noteAccent)
+
+                        Text(note.displayTitle)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                            // Same height for every card, so rows line up.
+                            .lineLimit(2, reservesSpace: true)
+                    }
+
+                    Text(NoteMetadata(note: note).text)
+                        .font(.caption)
+                        .foregroundStyle(Theme.faint)
+                        .lineLimit(1)
+                        .padding(.leading, 21)
+                }
+                .padding(.horizontal, 6)
+            }
+            .padding(5)
+            .padding(.bottom, 7)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(Theme.surface, in: cardShape)
+            .overlay(cardShape.strokeBorder(Theme.line, lineWidth: 1))
         }
         .buttonStyle(CardPressButtonStyle())
-        .overlay(alignment: .topTrailing) {
-            favoriteButton
-        }
-        .shadow(color: Color.black.opacity(0.1), radius: 6, x: 0, y: 3)
-        // Lift the card itself (not a rectangle) when the context menu opens.
-        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 20))
+        .contentShape(.contextMenuPreview, cardShape)
         .contextMenu {
-            Button {
-                onToggleFavorite(note)
-            } label: {
-                Label(
-                    note.isFavorite ? "Unfavorite" : "Favorite",
-                    systemImage: note.isFavorite ? "star.slash" : "star"
-                )
-            }
-            
-            Button(role: .destructive) {
-                onDelete(note)
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
+            NoteMenuItems(
+                note: note,
+                onEdit: onEdit,
+                onToggleFavorite: onToggleFavorite,
+                onDelete: onDelete
+            )
         }
     }
-    
-    private var favoriteButton: some View {
-        Button(action: {
-            onToggleFavorite(note)
-        }) {
-            Image(systemName: note.isFavorite ? "star.fill" : "star")
-                .font(.system(size: 12))
-                .foregroundColor(note.isFavorite ? .yellow : .gray)
-                .padding(8)
-        }
-        .buttonStyle(.plain)
+
+    private var cardShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
     }
-    
-    private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header with title
-            VStack(alignment: .leading, spacing: 8) {
-                Text(note.displayTitle)
-                    .font(.headline)
-                    .fontWeight(.medium)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .foregroundColor(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                
-                if !note.content.isEmpty {
-                    Text(note.previewContent)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .lineLimit(5)
-                        .multilineTextAlignment(.leading)
-                        .lineSpacing(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+
+    private var paper: some View {
+        let blocks = previewBlocks
+        return VStack(alignment: .leading, spacing: 5) {
+            if blocks.isEmpty {
+                Text("No additional text")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.faint)
+            } else {
+                MarkdownPreviewBlocks(blocks: blocks)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 16)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
-            
             Spacer(minLength: 0)
         }
+        .padding([.top, .horizontal], 11)
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: 118)
+        .background(Theme.thumb)
+        .overlay(alignment: .bottom) {
+            // Fade long notes out instead of cutting a line in half.
+            LinearGradient(colors: [Theme.thumb.opacity(0), Theme.thumb], startPoint: .top, endPoint: .bottom)
+                .frame(height: 22)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(Theme.thumbLine, lineWidth: 1)
+        }
+        .overlay(alignment: .topTrailing) {
+            if note.isFavorite {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.favorite)
+                    .padding(8)
+                    .accessibilityLabel("Favorite")
+            }
+        }
     }
-    
-    private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 20)
-            .fill(Color(.systemBackground))
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .strokeBorder(Color(.systemGray3), lineWidth: 1)
+
+    /// The note's blocks, minus a first heading that just repeats the title.
+    private var previewBlocks: [MarkdownPreviewBlock] {
+        var blocks = MarkdownPreviewBlock.parse(note.content, limit: 7)
+        if case .heading(let text)? = blocks.first, text == note.displayTitle {
+            blocks.removeFirst()
+        } else if case .paragraph(let text)? = blocks.first, note.title == nil, text.hasPrefix(note.displayTitle) {
+            blocks.removeFirst()
+        }
+        return blocks
+    }
+}
+
+/// "Yesterday · 1 of 3 done"
+struct NoteMetadata {
+    let note: NoteItem
+
+    var dateText: String { note.updatedAt.compactDisplay }
+
+    var progressText: String? {
+        let progress = MarkdownPreviewBlock.taskProgress(in: note.content)
+        guard progress.total > 0 else { return nil }
+        return "\(progress.done) of \(progress.total) done"
+    }
+
+    var text: String {
+        [dateText, progressText].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+/// Context menu shared by note cards and rows.
+struct NoteMenuItems: View {
+    let note: NoteItem
+    let onEdit: (NoteItem) -> Void
+    let onToggleFavorite: (NoteItem) -> Void
+    let onDelete: (NoteItem) -> Void
+
+    var body: some View {
+        Button {
+            onEdit(note)
+        } label: {
+            Label("Open", systemImage: "doc.text")
+        }
+
+        Button {
+            onToggleFavorite(note)
+        } label: {
+            Label(
+                note.isFavorite ? "Unfavorite" : "Favorite",
+                systemImage: note.isFavorite ? "star.slash" : "star"
             )
-    }
-    
-    private func wordCount(_ text: String) -> Int {
-        let words = text.components(separatedBy: .whitespacesAndNewlines)
-        return words.filter { !$0.isEmpty }.count
+        }
+
+        Button {
+            UIPasteboard.general.string = note.content
+            HapticManager.shared.success()
+        } label: {
+            Label("Copy Text", systemImage: "doc.on.doc")
+        }
+
+        ShareLink(item: note.content, subject: Text(note.displayTitle)) {
+            Label("Share", systemImage: "square.and.arrow.up")
+        }
+
+        Divider()
+
+        Button(role: .destructive) {
+            onDelete(note)
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
     }
 }

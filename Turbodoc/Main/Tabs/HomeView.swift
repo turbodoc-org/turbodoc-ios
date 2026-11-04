@@ -99,9 +99,6 @@ struct HomeView: View {
             .onChange(of: quickActionService.currentAction) { _, action in
                 handleQuickAction(action)
             }
-            .overlay(alignment: .bottomTrailing) {
-                addBookmarkButton
-            }
     }
     
     private var filterSheet: some View {
@@ -180,21 +177,12 @@ struct HomeView: View {
                 HapticManager.shared.selection()
                 showingFilters.toggle()
             }) {
-                Image(systemName: hasActiveFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                    .imageScale(.large)
-                    .foregroundColor(hasActiveFilters ? .blue : .primary)
+                Image(systemName: "line.3.horizontal.decrease")
+                    .foregroundStyle(hasActiveFilters ? Color.accentColor : .primary)
             }
         }
         
-        ToolbarItem(placement: .topBarTrailing) {
-            Button(action: {
-                HapticManager.shared.selection()
-                viewMode = viewMode == .grid ? .list : .grid
-            }) {
-                Image(systemName: viewMode == .grid ? "list.bullet" : "square.grid.2x2")
-                    .imageScale(.large)
-            }
-        }
+        ViewModeToolbarItem(selection: $viewMode)
     }
     
     @ViewBuilder
@@ -212,22 +200,6 @@ struct HomeView: View {
         if let bookmark = bookmarkToDelete {
             Text("Are you sure you want to delete \"\(bookmark.title)\"? This action cannot be undone.")
         }
-    }
-    
-    private var addBookmarkButton: some View {
-        Button(action: {
-            HapticManager.shared.light()
-            showingAddBookmark = true
-        }) {
-            Image(systemName: "plus")
-                .font(.title2)
-                .fontWeight(.semibold)
-                .foregroundColor(.white)
-                .frame(width: 56, height: 56)
-                .floatingActionButtonBackground(.blue)
-        }
-        .padding(.trailing, 24)
-        .padding(.bottom, 32)
     }
     
     private func handleQuickAction(_ action: QuickAction?) {
@@ -270,20 +242,37 @@ struct HomeView: View {
         
         let totalCount = baseFiltered.count
         let favoriteCount = baseFiltered.filter { $0.isFavorite }.count
+        let unreadCount = baseFiltered.filter { $0.status == .unread }.count
         let brokenCount = baseFiltered.filter { $0.isLinkBroken }.count
         
-        let allItem = FilterPillsBar.FilterItem(id: "all", title: "All", count: totalCount)
-        let favoritesItem = FilterPillsBar.FilterItem(id: "favorites", title: "Favorites", count: favoriteCount)
-        var items = [allItem, favoritesItem]
+        var items: [FilterPillsBar.FilterItem] = [
+            .init(id: "all", title: "All", count: totalCount),
+            .init(id: "favorites", title: "Favorites", count: favoriteCount),
+            .init(id: "unread", title: "Unread", count: unreadCount),
+        ]
         
         // Only offer the Broken filter when there's something to show.
         if brokenCount > 0 || selectedFilter == "broken" {
             items.append(
-                FilterPillsBar.FilterItem(id: "broken", title: "Broken", count: brokenCount, tint: .red)
+                FilterPillsBar.FilterItem(id: "broken", title: "Broken", count: brokenCount, tint: Theme.danger)
             )
         }
         
         return items
+    }
+    
+    @ViewBuilder
+    private var listHeader: some View {
+        if !allBookmarks.isEmpty {
+            let broken = allBookmarks.filter(\.isLinkBroken).count
+            VStack(spacing: 8) {
+                ListSummary(
+                    text: "\(allBookmarks.count) saved",
+                    highlight: broken > 0 ? "\(broken) broken link\(broken == 1 ? "" : "s")" : nil
+                )
+                filterPillsBar
+            }
+        }
     }
     
     private var hasActiveFilters: Bool {
@@ -331,56 +320,40 @@ struct HomeView: View {
     
     /// One list for both layouts, always mounted (even when empty) so pull to
     /// refresh, the large title and search keep tracking the same scroll view.
+    /// Both layouts stay mounted when empty so pull to refresh, the large
+    /// title and search keep tracking the same scroll view.
+    @ViewBuilder
     private var bookmarksList: some View {
-        List {
-            if !allBookmarks.isEmpty {
-                filterPillsBar
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-            }
-            
-            ForEach(bookmarks, id: \.id) { bookmark in
-                bookmarkRow(bookmark)
-                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                        Button {
-                            toggleFavorite(bookmark)
-                        } label: {
-                            Label(bookmark.isFavorite ? "Unfavorite" : "Favorite", systemImage: bookmark.isFavorite ? "star.slash.fill" : "star.fill")
-                        }
-                        .tint(.yellow)
-                        
-                        if bookmark.status != .read {
-                            Button {
-                                markAsRead(bookmark)
-                            } label: {
-                                Label("Read", systemImage: "checkmark.circle.fill")
-                            }
-                            .tint(.green)
-                        }
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button {
-                            confirmDeleteBookmark(bookmark)
-                        } label: {
-                            Label("Delete", systemImage: "trash.fill")
-                        }
-                        .tint(.red)
-                        
-                        if bookmark.status != .archived {
-                            Button {
-                                archiveBookmark(bookmark)
-                            } label: {
-                                Label("Archive", systemImage: "archivebox.fill")
-                            }
-                            .tint(.gray)
-                        }
-                    }
-            }
+        if viewMode == .grid {
+            galleryView
+        } else {
+            listView
         }
-        .listStyle(.plain)
-        // Keep the last row clear of the floating add button.
-        .contentMargins(.bottom, 96, for: .scrollContent)
+    }
+    
+    private var galleryView: some View {
+        ScrollView {
+            listHeader
+            
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 160), spacing: 12)],
+                spacing: 12
+            ) {
+                ForEach(bookmarks, id: \.id) { bookmark in
+                    BookmarkGalleryCard(
+                        bookmark: bookmark,
+                        onDelete: confirmDeleteBookmark,
+                        onUpdate: updateBookmark,
+                        onToggleFavorite: toggleFavorite
+                    )
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 2)
+        }
+        // The navigation container background keeps the search field drawn correctly.
+        .containerBackground(Theme.background, for: .navigation)
+        .contentMargins(.bottom, 12, for: .scrollContent)
         .overlay {
             if bookmarks.isEmpty && !isLoading {
                 emptyStateView
@@ -391,27 +364,85 @@ struct HomeView: View {
         }
     }
     
-    @ViewBuilder
-    private func bookmarkRow(_ bookmark: BookmarkItem) -> some View {
-        if viewMode == .grid {
-            BookmarkTileView(bookmark: bookmark, onDelete: { bookmarkToDelete in
-                confirmDeleteBookmark(bookmarkToDelete)
-            }, onUpdate: { bookmarkToUpdate, changes in
-                updateBookmark(bookmarkToUpdate, with: changes)
-            }, onToggleFavorite: { bookmarkToToggle in
-                toggleFavorite(bookmarkToToggle)
-            })
-            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-            .listRowSeparator(.hidden)
-        } else {
-            BookmarkCompactView(bookmark: bookmark, onDelete: { bookmarkToDelete in
-                confirmDeleteBookmark(bookmarkToDelete)
-            }, onUpdate: { bookmarkToUpdate, changes in
-                updateBookmark(bookmarkToUpdate, with: changes)
-            }, onToggleFavorite: { bookmarkToToggle in
-                toggleFavorite(bookmarkToToggle)
-            })
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+    private var listView: some View {
+        List {
+            listHeader
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            
+            if isSortedByDateAdded {
+                ForEach(groupedByDateSection(bookmarks, date: \.timeAdded), id: \.section) { group in
+                    Section {
+                        ForEach(group.items, id: \.id, content: listRow)
+                    } header: {
+                        Text(group.section.rawValue)
+                            .font(.headline)
+                            // A concrete color: `.primary` resolves to secondary in headers.
+                            .foregroundStyle(Color.primary)
+                            .textCase(nil)
+                    }
+                }
+            } else {
+                ForEach(bookmarks, id: \.id, content: listRow)
+            }
+        }
+        .listStyle(.plain)
+        .overlay {
+            if bookmarks.isEmpty && !isLoading {
+                emptyStateView
+            }
+        }
+        .refreshable {
+            await refreshBookmarks()
+        }
+    }
+    
+    private var isSortedByDateAdded: Bool {
+        sortOption == .dateAddedDesc || sortOption == .dateAddedAsc
+    }
+    
+    private func listRow(_ bookmark: BookmarkItem) -> some View {
+        BookmarkListRow(
+            bookmark: bookmark,
+            onDelete: confirmDeleteBookmark,
+            onUpdate: updateBookmark,
+            onToggleFavorite: toggleFavorite
+        )
+        .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 16))
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button {
+                toggleFavorite(bookmark)
+            } label: {
+                Label(bookmark.isFavorite ? "Unfavorite" : "Favorite", systemImage: bookmark.isFavorite ? "star.slash.fill" : "star.fill")
+            }
+            .tint(.yellow)
+            
+            if bookmark.status != .read {
+                Button {
+                    markAsRead(bookmark)
+                } label: {
+                    Label("Read", systemImage: "checkmark.circle.fill")
+                }
+                .tint(.green)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button {
+                confirmDeleteBookmark(bookmark)
+            } label: {
+                Label("Delete", systemImage: "trash.fill")
+            }
+            .tint(.red)
+            
+            if bookmark.status != .archived {
+                Button {
+                    archiveBookmark(bookmark)
+                } label: {
+                    Label("Archive", systemImage: "archivebox.fill")
+                }
+                .tint(.gray)
+            }
         }
     }
     
@@ -730,6 +761,8 @@ struct HomeView: View {
         switch selectedFilter {
         case "favorites":
             filtered = filtered.filter { $0.isFavorite }
+        case "unread":
+            filtered = filtered.filter { $0.status == .unread }
         case "broken":
             filtered = filtered.filter { $0.isLinkBroken }
         default:
@@ -1094,631 +1127,5 @@ struct TagEditorView: View {
     
     private func removeTag(_ tag: String) {
         tags.removeAll { $0 == tag }
-    }
-}
-
-struct BookmarkTileView: View {
-    let bookmark: BookmarkItem
-    let onDelete: (BookmarkItem) -> Void
-    let onUpdate: (BookmarkItem, BookmarkChanges) -> Void
-    let onToggleFavorite: (BookmarkItem) -> Void
-    
-    @State private var showingEditor = false
-    @State private var ogImage: String? = nil
-    @State private var imageLoading = false
-    
-    var body: some View {
-        Button(action: openURL) {
-            VStack(spacing: 0) {
-                // OG Image Header (160pt height like web version)
-                ogImageHeader
-                
-                // Main content area
-                HStack(spacing: 12) {
-                    // Content type icon (smaller since we have OG image)
-                    Image(systemName: iconForContentType(bookmark.contentType))
-                        .font(.footnote)
-                        .foregroundColor(.white)
-                        .frame(width: 24, height: 24)
-                        .background(colorForContentType(bookmark.contentType))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    
-                    // Content
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(bookmark.title)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                        
-                        if let url = bookmark.url {
-                            HStack(spacing: 4) {
-                                if bookmark.isLinkBroken {
-                                    Text(bookmark.linkFailureDescription)
-                                        .font(.caption)
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(.red)
-                                    Text("·")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Image(systemName: "globe")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
-                                Text(domainFromURL(url))
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                            }
-                        }
-                        
-                    }
-                    
-                    Spacer()
-                }
-                .padding(12)
-                
-                // Tags section
-                if !bookmark.tags.isEmpty {
-                    HStack {
-                        ForEach(bookmark.tags.prefix(3), id: \.self) { tag in
-                            Text(tag)
-                                .font(.caption2)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color(.systemGray5))
-                                .foregroundColor(Color(.label))
-                                .cornerRadius(8)
-                        }
-                        
-                        if bookmark.tags.count > 3 {
-                            Text("+\(bookmark.tags.count - 3)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        // Status badge
-                        Text(bookmark.status.rawValue)
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(statusColor.opacity(0.2))
-                            .foregroundColor(statusColor)
-                            .cornerRadius(8)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-                } else {
-                    // Status badge when no tags
-                    HStack {
-                        Spacer()
-                        Text(bookmark.status.rawValue)
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(statusColor.opacity(0.2))
-                            .foregroundColor(statusColor)
-                            .cornerRadius(8)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-                }
-            }
-        }
-        .buttonStyle(CardPressButtonStyle())
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(
-                    bookmark.isLinkBroken ? Color.red.opacity(0.6) : Color(.separator),
-                    lineWidth: bookmark.isLinkBroken ? 1 : 0.5
-                )
-        )
-        .overlay(alignment: .topLeading) {
-            if bookmark.isLinkBroken {
-                BrokenLinkBadge()
-                    .padding(8)
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            favoriteButton
-        }
-        .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
-        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 12))
-        .contextMenu {
-            contextMenuContent
-        }
-        .sheet(isPresented: $showingEditor) {
-            BookmarkEditView(bookmark: bookmark, onSave: { changes in
-                onUpdate(bookmark, changes)
-            })
-        }
-        .onAppear {
-            fetchOgImageIfNeeded()
-        }
-    }
-    
-    private var ogImageHeader: some View {
-        Rectangle()
-            .fill(Color(.systemGray5))
-            .frame(height: 120)
-            .overlay {
-                RemoteImage(url: ogImage.flatMap(URL.init(string:))) {
-                    domainFallbackView
-                }
-            }
-            // Desaturate dead links so they stand out at a glance.
-            .grayscale(bookmark.isLinkBroken ? 1 : 0)
-            .opacity(bookmark.isLinkBroken ? 0.6 : 1)
-            .clipped()
-    }
-    
-    private var domainFallbackView: some View {
-        Color(.systemGray5)
-            .overlay {
-                VStack(spacing: 4) {
-                    Image(systemName: "globe")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
-                    if let url = bookmark.url {
-                        Text(domainFromURL(url))
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-            }
-    }
-    
-    private func fetchOgImageIfNeeded() {
-        guard let url = bookmark.url, ogImage == nil, !imageLoading else { return }
-        
-        if let known = bookmark.ogImageURL {
-            ogImage = known
-            return
-        }
-        // Looked up earlier this session (possibly with no image found).
-        if let lookedUp = OGImageLookupCache.result(for: url) {
-            ogImage = lookedUp
-            return
-        }
-        // A dead link has no page to read an image from.
-        guard !bookmark.isLinkBroken else { return }
-        
-        imageLoading = true
-        Task {
-            let imageURL = try? await APIService.shared.fetchOgImage(for: url).ogImage
-            OGImageLookupCache.store(imageURL, for: url)
-            bookmark.ogImageURL = imageURL
-            ogImage = imageURL
-            imageLoading = false
-        }
-    }
-    
-    private var statusColor: Color {
-        switch bookmark.status {
-        case .unread:
-            return .orange
-        case .read:
-            return .green
-        case .archived:
-            return .gray
-        }
-    }
-    
-    private var favoriteButton: some View {
-        Button(action: {
-            onToggleFavorite(bookmark)
-        }) {
-            Image(systemName: bookmark.isFavorite ? "star.fill" : "star")
-                .font(.system(size: 12))
-                .foregroundColor(bookmark.isFavorite ? .yellow : .white)
-                .padding(8)
-                .background(Color.black.opacity(0.3))
-                .clipShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .padding(8)
-    }
-    
-    @ViewBuilder
-    private var contextMenuContent: some View {
-        Button(action: openURL) {
-            Label("Open Link", systemImage: "link")
-        }
-        
-        Button(action: { showingEditor = true }) {
-            Label("Edit Bookmark", systemImage: "pencil")
-        }
-        
-        Button(action: copyLink) {
-            Label("Copy Link", systemImage: "doc.on.doc")
-        }
-        
-        Button(action: shareBookmark) {
-            Label("Share", systemImage: "square.and.arrow.up")
-        }
-        
-        Divider()
-        
-        Button(action: { onToggleFavorite(bookmark) }) {
-            Label(
-                bookmark.isFavorite ? "Unfavorite" : "Favorite",
-                systemImage: bookmark.isFavorite ? "star.slash" : "star"
-            )
-        }
-        
-        if bookmark.status != .read {
-            Button(action: {
-                HapticManager.shared.selection()
-                onUpdate(bookmark, BookmarkChanges(status: .read))
-            }) {
-                Label("Mark as Read", systemImage: "checkmark.circle")
-            }
-        }
-        
-        if bookmark.status != .unread {
-            Button(action: {
-                HapticManager.shared.selection()
-                onUpdate(bookmark, BookmarkChanges(status: .unread))
-            }) {
-                Label("Mark as Unread", systemImage: "circle")
-            }
-        }
-        
-        if bookmark.status != .archived {
-            Button(action: {
-                HapticManager.shared.selection()
-                onUpdate(bookmark, BookmarkChanges(status: .archived))
-            }) {
-                Label("Archive", systemImage: "archivebox")
-            }
-        }
-        
-        Divider()
-        
-        Button(role: .destructive) {
-            onDelete(bookmark)
-        } label: {
-            Label("Delete", systemImage: "trash")
-        }
-    }
-    
-    private func openURL() {
-        guard let urlString = bookmark.url,
-              let url = URL(string: urlString) else {
-            return
-        }
-        
-        UIApplication.shared.open(url)
-    }
-    
-    private func copyLink() {
-        guard let urlString = bookmark.url else { return }
-        UIPasteboard.general.string = urlString
-        HapticManager.shared.success()
-    }
-    
-    private func shareBookmark() {
-        guard let urlString = bookmark.url,
-              let url = URL(string: urlString) else {
-            return
-        }
-        
-        let activityVC = UIActivityViewController(
-            activityItems: [url, bookmark.title],
-            applicationActivities: nil
-        )
-        
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootViewController = windowScene.windows.first?.rootViewController {
-            // Find the topmost presented view controller
-            var topController = rootViewController
-            while let presented = topController.presentedViewController {
-                topController = presented
-            }
-            
-            // For iPad, set popover presentation
-            if let popover = activityVC.popoverPresentationController {
-                popover.sourceView = topController.view
-                popover.sourceRect = CGRect(x: topController.view.bounds.midX, y: topController.view.bounds.midY, width: 0, height: 0)
-                popover.permittedArrowDirections = []
-            }
-            
-            topController.present(activityVC, animated: true)
-        }
-    }
-    
-    private func domainFromURL(_ urlString: String) -> String {
-        guard let url = URL(string: urlString),
-              let host = url.host else {
-            return urlString
-        }
-        return host.replacingOccurrences(of: "www.", with: "")
-    }
-    
-    private func iconForContentType(_ contentType: BookmarkItem.ContentType) -> String {
-        switch contentType {
-        case .link:
-            return "link"
-        case .image:
-            return "photo"
-        case .video:
-            return "video"
-        case .text:
-            return "doc.text"
-        case .file:
-            return "doc"
-        }
-    }
-    
-    private func colorForContentType(_ contentType: BookmarkItem.ContentType) -> Color {
-        switch contentType {
-        case .link:
-            return .blue
-        case .image:
-            return .green
-        case .video:
-            return .red
-        case .text:
-            return Color.yellow.opacity(0.8)
-        case .file:
-            return .purple
-        }
-    }
-}
-
-// MARK: - Compact List View
-
-struct BookmarkCompactView: View {
-    let bookmark: BookmarkItem
-    let onDelete: (BookmarkItem) -> Void
-    let onUpdate: (BookmarkItem, BookmarkChanges) -> Void
-    let onToggleFavorite: (BookmarkItem) -> Void
-    
-    @State private var showingEditor = false
-    
-    var body: some View {
-        Button(action: openURL) {
-            HStack(spacing: 12) {
-                // Favicon or icon
-                Image(systemName: iconForContentType(bookmark.contentType))
-                    .font(.footnote)
-                    .foregroundColor(.white)
-                    .frame(width: 32, height: 32)
-                    .background(colorForContentType(bookmark.contentType))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                
-                // Content
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(bookmark.title)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    
-                    HStack(spacing: 8) {
-                        if bookmark.isLinkBroken {
-                            Label(bookmark.linkFailureDescription, systemImage: "exclamationmark.triangle.fill")
-                                .labelStyle(.titleAndIcon)
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.red)
-                                .lineLimit(1)
-                        }
-                        
-                        if let url = bookmark.url {
-                            Text(domainFromURL(url))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-                        
-                        if !bookmark.tags.isEmpty {
-                            Text("•")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            
-                            Text(bookmark.tags.prefix(2).joined(separator: ", "))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                }
-                
-                Spacer()
-                
-                // Status indicator
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
-            }
-            .contentShape(Rectangle())
-        }
-        // The default style gives the standard row highlight on tap.
-        .buttonStyle(.automatic)
-        .contextMenu {
-            contextMenuContent
-        }
-        .sheet(isPresented: $showingEditor) {
-            BookmarkEditView(bookmark: bookmark, onSave: { changes in
-                onUpdate(bookmark, changes)
-            })
-        }
-    }
-    
-    private var statusColor: Color {
-        switch bookmark.status {
-        case .unread:
-            return .orange
-        case .read:
-            return .green
-        case .archived:
-            return .gray
-        }
-    }
-    
-    @ViewBuilder
-    private var contextMenuContent: some View {
-        Button(action: openURL) {
-            Label("Open Link", systemImage: "link")
-        }
-        
-        Button(action: { showingEditor = true }) {
-            Label("Edit Bookmark", systemImage: "pencil")
-        }
-        
-        Button(action: copyLink) {
-            Label("Copy Link", systemImage: "doc.on.doc")
-        }
-        
-        Button(action: shareBookmark) {
-            Label("Share", systemImage: "square.and.arrow.up")
-        }
-        
-        Divider()
-        
-        Button(action: { onToggleFavorite(bookmark) }) {
-            Label(
-                bookmark.isFavorite ? "Unfavorite" : "Favorite",
-                systemImage: bookmark.isFavorite ? "star.slash" : "star"
-            )
-        }
-        
-        if bookmark.status != .read {
-            Button(action: {
-                HapticManager.shared.selection()
-                onUpdate(bookmark, BookmarkChanges(status: .read))
-            }) {
-                Label("Mark as Read", systemImage: "checkmark.circle")
-            }
-        }
-        
-        if bookmark.status != .unread {
-            Button(action: {
-                HapticManager.shared.selection()
-                onUpdate(bookmark, BookmarkChanges(status: .unread))
-            }) {
-                Label("Mark as Unread", systemImage: "circle")
-            }
-        }
-        
-        if bookmark.status != .archived {
-            Button(action: {
-                HapticManager.shared.selection()
-                onUpdate(bookmark, BookmarkChanges(status: .archived))
-            }) {
-                Label("Archive", systemImage: "archivebox")
-            }
-        }
-        
-        Divider()
-        
-        Button(role: .destructive) {
-            onDelete(bookmark)
-        } label: {
-            Label("Delete", systemImage: "trash")
-        }
-    }
-    
-    private func openURL() {
-        guard let urlString = bookmark.url,
-              let url = URL(string: urlString) else {
-            return
-        }
-        
-        UIApplication.shared.open(url)
-    }
-    
-    private func copyLink() {
-        guard let urlString = bookmark.url else { return }
-        UIPasteboard.general.string = urlString
-        HapticManager.shared.success()
-    }
-    
-    private func shareBookmark() {
-        guard let urlString = bookmark.url,
-              let url = URL(string: urlString) else {
-            return
-        }
-        
-        let activityVC = UIActivityViewController(
-            activityItems: [url, bookmark.title],
-            applicationActivities: nil
-        )
-        
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootViewController = windowScene.windows.first?.rootViewController {
-            var topController = rootViewController
-            while let presented = topController.presentedViewController {
-                topController = presented
-            }
-            
-            if let popover = activityVC.popoverPresentationController {
-                popover.sourceView = topController.view
-                popover.sourceRect = CGRect(x: topController.view.bounds.midX, y: topController.view.bounds.midY, width: 0, height: 0)
-                popover.permittedArrowDirections = []
-            }
-            
-            topController.present(activityVC, animated: true)
-        }
-    }
-    
-    private func domainFromURL(_ urlString: String) -> String {
-        guard let url = URL(string: urlString),
-              let host = url.host else {
-            return urlString
-        }
-        return host.replacingOccurrences(of: "www.", with: "")
-    }
-    
-    private func iconForContentType(_ contentType: BookmarkItem.ContentType) -> String {
-        switch contentType {
-        case .link:
-            return "link"
-        case .image:
-            return "photo"
-        case .video:
-            return "video"
-        case .text:
-            return "doc.text"
-        case .file:
-            return "doc"
-        }
-    }
-    
-    private func colorForContentType(_ contentType: BookmarkItem.ContentType) -> Color {
-        switch contentType {
-        case .link:
-            return .blue
-        case .image:
-            return .green
-        case .video:
-            return .red
-        case .text:
-            return Color.yellow.opacity(0.8)
-        case .file:
-            return .purple
-        }
-    }
-}
-
-/// Red "Broken link" capsule shown on bookmarks the link checker flagged.
-struct BrokenLinkBadge: View {
-    var body: some View {
-        Label("Broken link", systemImage: "exclamationmark.triangle.fill")
-            .font(.caption2)
-            .fontWeight(.semibold)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.red.opacity(0.95), in: Capsule())
     }
 }

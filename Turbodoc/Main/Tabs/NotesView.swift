@@ -15,7 +15,6 @@ struct NotesView: View {
     @State private var showingVoiceRecording = false
     @State private var showingPhotoOCR = false
     @State private var noteToEdit: NoteItem?
-    @State private var isFABExpanded = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var lastRefreshTime = Date.distantPast
     @State private var refreshCoordinator = RefreshCoordinator()
@@ -62,33 +61,45 @@ struct NotesView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
                         Picker("Sort", selection: $sortOrder) {
-                            Text("Newest First").tag("date_newest")
-                            Text("Oldest First").tag("date_oldest")
-                            Text("Recently Modified").tag("modified")
-                            Text("A-Z").tag("alpha_asc")
-                            Text("Z-A").tag("alpha_desc")
+                            ForEach(Self.sortOptions, id: \.value) { option in
+                                Text(option.title).tag(option.value)
+                            }
                         }
                     } label: {
-                        Image(systemName: "arrow.up.arrow.down.circle")
-                            .imageScale(.large)
+                        Label(sortTitle, systemImage: "arrow.up.arrow.down")
+                            .labelStyle(.titleAndIcon)
                     }
                 }
                 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: {
-                        HapticManager.shared.selection()
-                        viewMode = viewMode == .grid ? .list : .grid
-                    }) {
-                        Image(systemName: viewMode == .grid ? "list.bullet" : "square.grid.2x2")
-                            .imageScale(.large)
+                    // Text notes start from the + beside the tab bar.
+                    Menu {
+                        Button {
+                            showingVoiceRecording = true
+                        } label: {
+                            Label("Voice Note", systemImage: "mic")
+                        }
+                        Button {
+                            showingPhotoOCR = true
+                        } label: {
+                            Label("Photo Note", systemImage: "camera")
+                        }
+                    } label: {
+                        Label("Capture", systemImage: "waveform.and.mic")
                     }
                 }
+
+                
+                ViewModeToolbarItem(selection: $viewMode)
             }
             .searchable(text: $searchText, prompt: "Search notes...")
             .onChange(of: searchText) {
                 performSearch(query: searchText)
             }
             .onChange(of: sortOrder) {
+                applyFilter()
+            }
+            .onChange(of: viewMode) {
                 applyFilter()
             }
             .onAppear {
@@ -159,8 +170,11 @@ struct NotesView: View {
                 })
             }
             .onChange(of: quickActionService.currentAction) { _, action in
-                if action == .newNote {
-                    showingAddNote = true
+                switch action {
+                case .newNote: showingAddNote = true
+                case .newVoiceNote: showingVoiceRecording = true
+                case .newPhotoNote: showingPhotoOCR = true
+                default: break
                 }
             }
             .navigationDestination(item: $noteToEdit) { noteToEdit in
@@ -185,77 +199,25 @@ struct NotesView: View {
                         self.noteToEdit = nil
                     }
                 )
+                .hidesTabBar()
             }
-            .overlay(alignment: .bottomTrailing) {
-                VStack(alignment: .trailing, spacing: 16) {
-                    // Expandable menu items
-                    if isFABExpanded {
-                        VStack(alignment: .trailing, spacing: 12) {
-                            // Voice recording button
-                            FABMenuItem(
-                                icon: "mic.fill",
-                                label: "Voice Note",
-                                color: .orange
-                            ) {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    isFABExpanded = false
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                    showingVoiceRecording = true
-                                }
-                            }
-                            
-                            // Photo OCR button
-                            FABMenuItem(
-                                icon: "camera.fill",
-                                label: "Photo Note",
-                                color: .purple
-                            ) {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    isFABExpanded = false
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                    showingPhotoOCR = true
-                                }
-                            }
-                            
-                            // Text note button
-                            FABMenuItem(
-                                icon: "text.alignleft",
-                                label: "Text Note",
-                                color: .blue
-                            ) {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    isFABExpanded = false
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                    showingAddNote = true
-                                }
-                            }
-                        }
-                        .transition(.scale.combined(with: .opacity))
-                    }
-                    
-                    // Main FAB button
-                    Button(action: {
-                        HapticManager.shared.light()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            isFABExpanded.toggle()
-                        }
-                    }) {
-                        // Rotating the plus 45° turns it into a close button.
-                        Image(systemName: "plus")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                            .frame(width: 56, height: 56)
-                            .floatingActionButtonBackground(.blue)
-                            .rotationEffect(.degrees(isFABExpanded ? 45 : 0))
-                    }
-                }
-                .padding(.trailing, 24)
-                .padding(.bottom, 32)
-            }
+        }
+    }
+    
+    private static let sortOptions: [(value: String, title: String)] = [
+        ("date_newest", "Newest First"),
+        ("date_oldest", "Oldest First"),
+        ("modified", "Recently Edited"),
+        ("alpha_asc", "Title A–Z"),
+        ("alpha_desc", "Title Z–A"),
+    ]
+    
+    private var sortTitle: String {
+        switch sortOrder {
+        case "date_oldest": return "Oldest"
+        case "modified": return "Edited"
+        case "alpha_asc", "alpha_desc": return "Title"
+        default: return "Newest"
         }
     }
     
@@ -297,6 +259,8 @@ struct NotesView: View {
     @ViewBuilder
     private var filterPills: some View {
         if !allNotes.isEmpty {
+            ListSummary(text: "\(allNotes.count) note\(allNotes.count == 1 ? "" : "s")")
+            
             FilterPillsBar(
                 filters: filterItems,
                 selectedFilter: selectedFilter,
@@ -315,18 +279,19 @@ struct NotesView: View {
             filterPills
             
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 150), spacing: 16)],
-                spacing: 16
+                columns: [GridItem(.adaptive(minimum: 160), spacing: 12)],
+                spacing: 12
             ) {
                 ForEach(notes, id: \.id) { note in
                     noteCard(note)
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 8)
+            .padding(.top, 2)
         }
-        // Keep the last cards clear of the floating add button.
-        .contentMargins(.bottom, 100, for: .scrollContent)
+        // The navigation container background keeps the search field drawn correctly.
+        .containerBackground(Theme.background, for: .navigation)
+        .contentMargins(.bottom, 12, for: .scrollContent)
         .overlay {
             if notes.isEmpty && !isLoading {
                 emptyStateView
@@ -346,47 +311,42 @@ struct NotesView: View {
         )
     }
     
+    /// Apple Notes style: favorites first, then everything else, each in an
+    /// inset grouped section.
     private var listView: some View {
-        List {
-            filterPills
-                .listRowInsets(EdgeInsets())
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+        let favorites = notes.filter(\.isFavorite)
+        let others = notes.filter { !$0.isFavorite }
+        
+        return List {
+            if !favorites.isEmpty {
+                Section {
+                    ForEach(favorites, id: \.id, content: listRow)
+                } header: {
+                    VStack(alignment: .leading, spacing: 18) {
+                        noteCountHeader
+                        Label("Favorites", systemImage: "star.fill")
+                            .labelStyle(SectionHeaderLabelStyle())
+                    }
+                }
+            }
             
-            ForEach(notes, id: \.id) { note in
-                NoteListRowView(
-                    note: note,
-                    onEdit: { noteToEdit in
-                        self.noteToEdit = noteToEdit
-                    },
-                    onDelete: { noteToDelete in
-                        confirmDeleteNote(noteToDelete)
+            if !others.isEmpty {
+                Section {
+                    ForEach(others, id: \.id, content: listRow)
+                } header: {
+                    VStack(alignment: .leading, spacing: 18) {
+                        if favorites.isEmpty {
+                            noteCountHeader
+                        }
+                        Text(favorites.isEmpty ? "Notes" : "Recent")
+                            .font(.title3.bold())
+                            .foregroundStyle(Color.primary)
+                            .textCase(nil)
                     }
-                )
-                .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                    Button {
-                        toggleFavorite(note)
-                    } label: {
-                        Label(
-                            note.isFavorite ? "Unfavorite" : "Favorite",
-                            systemImage: note.isFavorite ? "star.slash.fill" : "star.fill"
-                        )
-                    }
-                    .tint(.yellow)
                 }
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button {
-                        confirmDeleteNote(note)
-                    } label: {
-                        Label("Delete", systemImage: "trash.fill")
-                    }
-                    .tint(.red)
-                }
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             }
         }
-        .listStyle(.plain)
-        .contentMargins(.bottom, 100, for: .scrollContent)
+        .listStyle(.insetGrouped)
         .overlay {
             if notes.isEmpty && !isLoading {
                 emptyStateView
@@ -394,6 +354,41 @@ struct NotesView: View {
         }
         .refreshable {
             await refreshNotes()
+        }
+    }
+    
+    private var noteCountHeader: some View {
+        Text("\(allNotes.count) note\(allNotes.count == 1 ? "" : "s")")
+            .font(.subheadline)
+            .foregroundStyle(Color.secondary)
+            .textCase(nil)
+    }
+    
+    private func listRow(_ note: NoteItem) -> some View {
+        NoteListRowView(
+            note: note,
+            onEdit: { noteToEdit = $0 },
+            onDelete: confirmDeleteNote,
+            onToggleFavorite: toggleFavorite
+        )
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button {
+                toggleFavorite(note)
+            } label: {
+                Label(
+                    note.isFavorite ? "Unfavorite" : "Favorite",
+                    systemImage: note.isFavorite ? "star.slash.fill" : "star.fill"
+                )
+            }
+            .tint(.yellow)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button {
+                confirmDeleteNote(note)
+            } label: {
+                Label("Delete", systemImage: "trash.fill")
+            }
+            .tint(.red)
         }
     }
     
@@ -419,8 +414,8 @@ struct NotesView: View {
     private func applyFilter() {
         var filtered = allNotes
         
-        // Apply selected filter
-        switch selectedFilter {
+        // The list view shows favorites as their own section instead.
+        switch viewMode == .grid ? selectedFilter : "all" {
         case "favorites":
             filtered = filtered.filter { $0.isFavorite }
         default:  // "all"
@@ -703,9 +698,9 @@ struct NotesView: View {
     private func performSearch(query: String) {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // If search is empty, show all notes
+        // If search is empty, go back to the filtered, sorted notes
         if trimmedQuery.isEmpty {
-            notes = allNotes
+            applyFilter()
             return
         }
         
@@ -769,34 +764,17 @@ struct NotesView: View {
     }
 }
 
-// MARK: - FAB Menu Item Component
-
-struct FABMenuItem: View {
-    let icon: String
-    let label: String
-    let color: Color
-    let action: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            Text(label)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.primary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(Color(.secondarySystemBackground))
-                        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
-                )
-            
-            Button(action: action) {
-                Image(systemName: icon)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 50, height: 50)
-                    .floatingActionButtonBackground(color)
-            }
+/// Large, bold section title with a tinted icon (e.g. the Favorites star).
+private struct SectionHeaderLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 7) {
+            configuration.icon
+                .font(.headline)
+                .foregroundStyle(Theme.favorite)
+            configuration.title
+                .font(.title3.bold())
+                .foregroundStyle(Color.primary)
         }
+        .textCase(nil)
     }
 }
