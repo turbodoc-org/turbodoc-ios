@@ -23,9 +23,6 @@ struct NotesView: View {
     @AppStorage("notesFilterSelection") private var selectedFilter: String = "all"
     @AppStorage("notesSortOrder") private var sortOrder: String = "date_newest"
     
-    @State private var isConnected = NetworkMonitor.shared.isConnected
-    @State private var pendingOperationsCount = SyncQueueManager.shared.pendingOperationsCount
-    
     private var filterItems: [FilterPillsBar.FilterItem] {
         let favoriteCount = allNotes.filter { $0.isFavorite }.count
         
@@ -37,43 +34,32 @@ struct NotesView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Offline banner
+            Group {
+                if isLoading && allNotes.isEmpty {
+                    loadingView
+                } else if viewMode == .grid {
+                    gridView
+                } else {
+                    listView
+                }
+            }
+            // Pinned under the navigation bar, outside the scroll view, so it
+            // never competes with it for scroll tracking.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                // Both are @Observable, so reading them here keeps the banner current.
                 OfflineBanner(
-                    isConnected: isConnected,
-                    pendingOperations: pendingOperationsCount,
+                    isConnected: NetworkMonitor.shared.isConnected,
+                    pendingOperations: SyncQueueManager.shared.pendingOperationsCount,
                     onTapSync: {
                         Task {
                             await SyncQueueManager.shared.processPendingOperations()
                         }
                     }
                 )
-                
-                if isLoading {
-                    loadingView
-                } else {
-                    // Always show filter pills when we have notes (even if filtered result is empty)
-                    if !allNotes.isEmpty {
-                        FilterPillsBar(
-                            filters: filterItems,
-                            selectedFilter: selectedFilter,
-                            onSelect: { filterId in
-                                selectedFilter = filterId
-                                applyFilter()
-                            }
-                        )
-                    }
-                    
-                    if notes.isEmpty {
-                        emptyStateView
-                    } else {
-                        notesGrid
-                    }
-                }
             }
             .navigationTitle("Notes")
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Menu {
                         Picker("Sort", selection: $sortOrder) {
                             Text("Newest First").tag("date_newest")
@@ -88,7 +74,7 @@ struct NotesView: View {
                     }
                 }
                 
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button(action: {
                         HapticManager.shared.selection()
                         viewMode = viewMode == .grid ? .list : .grid
@@ -110,15 +96,6 @@ struct NotesView: View {
                 // back to "all" so the user doesn't end up on a non-existent filter.
                 if selectedFilter == "recent" { selectedFilter = "all" }
                 refreshNotesIfNeeded()
-            }
-            .onReceive(NetworkMonitor.shared.connectionStatusChanged) { connected in
-                Task { @MainActor in
-                    isConnected = connected
-                }
-            }
-            .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-                isConnected = NetworkMonitor.shared.isConnected
-                pendingOperationsCount = SyncQueueManager.shared.pendingOperationsCount
             }
             .onChange(of: scenePhase) {
                 if scenePhase == .active && authService.authenticationStatus == .authenticated {
@@ -184,10 +161,6 @@ struct NotesView: View {
             .onChange(of: quickActionService.currentAction) { _, action in
                 if action == .newNote {
                     showingAddNote = true
-                    HapticManager.shared.light()
-                } else if action == .search {
-                    // Focus search field - handled by searchable modifier
-                    HapticManager.shared.light()
                 }
             }
             .navigationDestination(item: $noteToEdit) { noteToEdit in
@@ -224,7 +197,6 @@ struct NotesView: View {
                                 label: "Voice Note",
                                 color: .orange
                             ) {
-                                HapticManager.shared.selection()
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                     isFABExpanded = false
                                 }
@@ -239,7 +211,6 @@ struct NotesView: View {
                                 label: "Photo Note",
                                 color: .purple
                             ) {
-                                HapticManager.shared.selection()
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                     isFABExpanded = false
                                 }
@@ -254,7 +225,6 @@ struct NotesView: View {
                                 label: "Text Note",
                                 color: .blue
                             ) {
-                                HapticManager.shared.selection()
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                     isFABExpanded = false
                                 }
@@ -268,26 +238,18 @@ struct NotesView: View {
                     
                     // Main FAB button
                     Button(action: {
-                        HapticManager.shared.selection()
+                        HapticManager.shared.light()
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             isFABExpanded.toggle()
                         }
                     }) {
-                        Image(systemName: isFABExpanded ? "xmark" : "plus")
+                        // Rotating the plus 45° turns it into a close button.
+                        Image(systemName: "plus")
                             .font(.title2)
                             .fontWeight(.semibold)
                             .foregroundColor(.white)
                             .frame(width: 56, height: 56)
-                            .background(
-                                Circle()
-                                    .fill(Color.blue)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                                    )
-                            )
-                            .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
-                            .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
+                            .floatingActionButtonBackground(.blue)
                             .rotationEffect(.degrees(isFABExpanded ? 45 : 0))
                     }
                 }
@@ -310,66 +272,66 @@ struct NotesView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
+    @ViewBuilder
     private var emptyStateView: some View {
-        VStack(spacing: 30) {
-            Image(systemName: "note.text")
-                .font(.system(size: 80))
-                .foregroundColor(.blue)
-            
-            VStack(spacing: 16) {
-                Text("No Notes Yet")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                
-                Text("Your notes will appear here")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                
-                if let errorMessage = errorMessage {
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
+        let trimmedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedQuery.isEmpty {
+            ContentUnavailableView.search(text: trimmedQuery)
+        } else if selectedFilter == "favorites" && !allNotes.isEmpty {
+            ContentUnavailableView(
+                "No Favorite Notes",
+                systemImage: "star",
+                description: Text("Notes you favorite will appear here.")
+            )
+        } else {
+            ContentUnavailableView {
+                Label("No Notes Yet", systemImage: "note.text")
+            } description: {
+                Text(errorMessage ?? "Your notes will appear here.")
+            } actions: {
+                Button("New Note") { showingAddNote = true }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var filterPills: some View {
+        if !allNotes.isEmpty {
+            FilterPillsBar(
+                filters: filterItems,
+                selectedFilter: selectedFilter,
+                onSelect: { filterId in
+                    selectedFilter = filterId
+                    applyFilter()
                 }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-    
-    private var notesGrid: some View {
-        Group {
-            if viewMode == .grid {
-                gridView
-            } else {
-                listView
-            }
+            )
         }
     }
     
+    /// Both layouts stay mounted when empty so pull to refresh, the large title
+    /// and search keep tracking the same scroll view.
     private var gridView: some View {
-        List {
-            ForEach(Array(stride(from: 0, to: notes.count, by: 2)), id: \.self) { index in
-                HStack(alignment: .top, spacing: 16) {
-                    noteCard(notes[index])
-
-                    if notes.indices.contains(index + 1) {
-                        noteCard(notes[index + 1])
-                    } else {
-                        Color.clear
-                            .frame(maxWidth: .infinity)
-                            .aspectRatio(1, contentMode: .fit)
-                    }
+        ScrollView {
+            filterPills
+            
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 150), spacing: 16)],
+                spacing: 16
+            ) {
+                ForEach(notes, id: \.id) { note in
+                    noteCard(note)
                 }
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+        }
+        // Keep the last cards clear of the floating add button.
+        .contentMargins(.bottom, 100, for: .scrollContent)
+        .overlay {
+            if notes.isEmpty && !isLoading {
+                emptyStateView
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .contentMargins(.bottom, 100, for: .scrollContent)
         .refreshable {
             await refreshNotes()
         }
@@ -385,38 +347,51 @@ struct NotesView: View {
     }
     
     private var listView: some View {
-        List(notes, id: \.id) { note in
-            NoteListRowView(
-                note: note,
-                onEdit: { noteToEdit in
-                    self.noteToEdit = noteToEdit
-                },
-                onDelete: { noteToDelete in
-                    confirmDeleteNote(noteToDelete)
+        List {
+            filterPills
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            
+            ForEach(notes, id: \.id) { note in
+                NoteListRowView(
+                    note: note,
+                    onEdit: { noteToEdit in
+                        self.noteToEdit = noteToEdit
+                    },
+                    onDelete: { noteToDelete in
+                        confirmDeleteNote(noteToDelete)
+                    }
+                )
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                    Button {
+                        toggleFavorite(note)
+                    } label: {
+                        Label(
+                            note.isFavorite ? "Unfavorite" : "Favorite",
+                            systemImage: note.isFavorite ? "star.slash.fill" : "star.fill"
+                        )
+                    }
+                    .tint(.yellow)
                 }
-            )
-            .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                Button {
-                    toggleFavorite(note)
-                } label: {
-                    Label(
-                        note.isFavorite ? "Unfavorite" : "Favorite",
-                        systemImage: note.isFavorite ? "star.slash.fill" : "star.fill"
-                    )
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button {
+                        confirmDeleteNote(note)
+                    } label: {
+                        Label("Delete", systemImage: "trash.fill")
+                    }
+                    .tint(.red)
                 }
-                .tint(.yellow)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             }
-            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                Button(role: .destructive) {
-                    confirmDeleteNote(note)
-                } label: {
-                    Label("Delete", systemImage: "trash.fill")
-                }
-            }
-            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-            .listRowSeparator(.hidden)
         }
-        .listStyle(PlainListStyle())
+        .listStyle(.plain)
+        .contentMargins(.bottom, 100, for: .scrollContent)
+        .overlay {
+            if notes.isEmpty && !isLoading {
+                emptyStateView
+            }
+        }
         .refreshable {
             await refreshNotes()
         }
@@ -455,7 +430,7 @@ struct NotesView: View {
         // Apply sorting
         switch sortOrder {
         case "date_oldest":
-            filtered.sort { $0.updatedAt > $1.updatedAt }  // Oldest first = ascending date
+            filtered.sort { $0.createdAt < $1.createdAt }
         case "alpha_asc":
             filtered.sort {
                 ($0.title ?? $0.displayTitle).localizedCaseInsensitiveCompare(
@@ -469,7 +444,7 @@ struct NotesView: View {
         case "modified":
             filtered.sort { $0.updatedAt > $1.updatedAt }
         default:  // "date_newest"
-            filtered.sort { $0.updatedAt < $1.updatedAt }  // Newest first = descending date
+            filtered.sort { $0.createdAt > $1.createdAt }
         }
         
         notes = filtered
@@ -525,17 +500,21 @@ struct NotesView: View {
                     self.notes.removeAll { $0.id == note.id }
                     self.allNotes.removeAll { $0.id == note.id }
                     self.noteToDelete = nil
+                    HapticManager.shared.success()
                 }
             } catch {
                 await MainActor.run {
                     self.errorMessage = "Failed to delete note: \(error.localizedDescription)"
                     self.noteToDelete = nil
+                    HapticManager.shared.error()
                 }
             }
         }
     }
     
     private func toggleFavorite(_ note: NoteItem) {
+        HapticManager.shared.selection()
+        
         // Optimistic UI update
         note.isFavorite.toggle()
         
@@ -572,6 +551,7 @@ struct NotesView: View {
                         self.allNotes[index] = note
                     }
                     self.errorMessage = "Failed to update favorite status"
+                    HapticManager.shared.error()
                 }
             }
         }
@@ -815,15 +795,7 @@ struct FABMenuItem: View {
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(width: 50, height: 50)
-                    .background(
-                        Circle()
-                            .fill(color)
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                            )
-                    )
-                    .shadow(color: color.opacity(0.3), radius: 6, x: 0, y: 3)
+                    .floatingActionButtonBackground(color)
             }
         }
     }

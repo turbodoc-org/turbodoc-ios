@@ -22,7 +22,7 @@ struct EmailVerificationView: View {
     @State private var cooldownTimer: Timer?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     VStack(spacing: 16) {
@@ -115,7 +115,7 @@ struct EmailVerificationView: View {
             .navigationTitle("Verify Email")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") {
                         cancelCooldown()
                         authService.pendingVerificationEmail = nil
@@ -173,6 +173,7 @@ struct EmailVerificationView: View {
                 await MainActor.run {
                     isResending = false
                     resendResult = "Verification email resent to \(email)."
+                    HapticManager.shared.success()
                     startCooldownIfNeeded(fromSeconds: Self.resendCooldownSeconds)
                 }
             } catch {
@@ -183,6 +184,7 @@ struct EmailVerificationView: View {
                 await MainActor.run {
                     isResending = false
                     resendResult = "Failed: \(message)"
+                    HapticManager.shared.error()
                 }
             }
         }

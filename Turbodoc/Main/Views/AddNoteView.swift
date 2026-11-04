@@ -4,6 +4,7 @@ struct AddNoteView: View {
     @State private var content: String = ""
     @State private var title: String = ""
     @State private var note: NoteItem?
+    @State private var editorController = MarkdownEditorController()
     
     let onSave: (NoteItem) -> Void
     
@@ -30,7 +31,7 @@ struct AddNoteView: View {
                 Divider()
                 
                 // Markdown editor
-                MarkdownEditor(text: $content)
+                MarkdownEditor(text: $content, controller: editorController)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.horizontal, 16)
                     .background(editorSurface)
@@ -41,13 +42,17 @@ struct AddNoteView: View {
             .toolbarBackground(editorSurface, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") {
                         cancelNote()
                     }
                 }
                 
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    MarkdownEditorHistoryButtons(controller: editorController)
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
                         finishNote()
                     }

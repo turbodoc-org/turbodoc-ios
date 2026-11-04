@@ -9,7 +9,7 @@ struct SignInView: View {
     @State private var showingEmailVerification = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: Constants.Spacing.xl) {
                     // Logo/Title
@@ -132,6 +132,7 @@ struct SignInView: View {
                 try await authService.signIn(email: email, password: password)
             } catch {
                 // Error is handled in AuthenticationService
+                HapticManager.shared.error()
             }
         }
     }

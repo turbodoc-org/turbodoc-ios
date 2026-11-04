@@ -3,7 +3,7 @@ import SwiftUI
 /// Comprehensive bookmark editor supporting title, URL, tags, and status
 struct BookmarkEditView: View {
     let bookmark: BookmarkItem
-    let onSave: (BookmarkItem) -> Void
+    let onSave: (BookmarkChanges) -> Void
     
     @State private var title: String
     @State private var url: String
@@ -12,7 +12,7 @@ struct BookmarkEditView: View {
     @State private var shouldProcessTags = false
     @Environment(\.dismiss) private var dismiss
     
-    init(bookmark: BookmarkItem, onSave: @escaping (BookmarkItem) -> Void) {
+    init(bookmark: BookmarkItem, onSave: @escaping (BookmarkChanges) -> Void) {
         self.bookmark = bookmark
         self.onSave = onSave
         _title = State(initialValue: bookmark.title)
@@ -22,7 +22,7 @@ struct BookmarkEditView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 // Title Section
                 Section(header: Text("Title")) {
@@ -90,13 +90,13 @@ struct BookmarkEditView: View {
             .navigationTitle("Edit Bookmark")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") {
                         dismiss()
                     }
                 }
                 
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
                         shouldProcessTags = true
                         // Give a moment for the state change to propagate
@@ -122,13 +122,16 @@ struct BookmarkEditView: View {
     }
     
     private func saveChanges() {
-        var updatedBookmark = bookmark
-        updatedBookmark.title = title.trim()
-        updatedBookmark.url = url.trim()
-        updatedBookmark.tags = selectedTags
-        updatedBookmark.status = status
+        // Only send what changed: a URL in the update makes the API re-crawl.
+        var changes = BookmarkChanges()
+        if title.trim() != bookmark.title { changes.title = title.trim() }
+        if url.trim() != (bookmark.url ?? "") { changes.url = url.trim() }
+        if selectedTags != bookmark.tags { changes.tags = selectedTags }
+        if status != bookmark.status { changes.status = status }
         
-        onSave(updatedBookmark)
+        if !changes.isEmpty {
+            onSave(changes)
+        }
         dismiss()
     }
 }
@@ -208,7 +211,7 @@ extension String {
     sampleBookmark.tags = ["swift", "ios", "development"]
     sampleBookmark.status = .unread
     
-    return BookmarkEditView(bookmark: sampleBookmark) { updatedBookmark in
+    return BookmarkEditView(bookmark: sampleBookmark) { _ in
         AppLogger.notes.info("Bookmark edit was saved")
     }
 }

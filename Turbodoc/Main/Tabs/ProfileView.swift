@@ -10,7 +10,7 @@ struct ProfileView: View {
     @State private var statsErrorMessage: String?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     profileHeader
@@ -369,7 +369,7 @@ struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 24) {
                 VStack(spacing: 16) {
                     // App Icon
@@ -426,7 +426,7 @@ struct AboutView: View {
             .navigationTitle("About")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
                         dismiss()
                     }

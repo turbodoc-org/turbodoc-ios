@@ -16,7 +16,7 @@ struct PhotoOCRView: View {
     @State private var photoPickerItem: PhotosPickerItem?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 20) {
                 if let image = selectedImage {
                     // Image preview
@@ -92,13 +92,13 @@ struct PhotoOCRView: View {
             .navigationTitle("Photo OCR")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") {
                         dismiss()
                     }
                 }
                 
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     if selectedImage != nil && !extractedText.isEmpty {
                         Button("Save") {
                             onSave(extractedText, selectedImage)
@@ -141,12 +141,14 @@ struct PhotoOCRView: View {
                 await MainActor.run {
                     extractedText = text
                     isProcessing = false
+                    HapticManager.shared.success()
                 }
             } catch {
                 await MainActor.run {
                     errorMessage = error.localizedDescription
                     showingError = true
                     isProcessing = false
+                    HapticManager.shared.error()
                 }
             }
         }

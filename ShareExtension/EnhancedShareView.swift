@@ -21,7 +21,7 @@ struct EnhancedShareView: View {
     private let appGroupIdentifier = "group.ai.turbodoc.ios.Turbodoc"
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 // URL Preview Section
                 Section {
@@ -68,7 +68,7 @@ struct EnhancedShareView: View {
                 Section(header: Text("Title")) {
                     TextField("Enter bookmark title", text: $title)
                         .disabled(isLoadingMetadata)
-                        .onChange(of: title) { _ in
+                        .onChange(of: title) {
                             hasUserEditedTitle = true
                         }
                 }
@@ -161,13 +161,13 @@ struct EnhancedShareView: View {
             .navigationTitle("Save Bookmark")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") {
                         onCancel()
                     }
                 }
                 
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
                         saveBookmark()
                     }

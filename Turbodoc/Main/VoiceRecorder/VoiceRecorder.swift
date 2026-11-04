@@ -27,11 +27,7 @@ final class VoiceRecorder: NSObject, ObservableObject {
     // MARK: - Permissions
     
     func requestAuthorization() async -> Bool {
-        let granted = await withCheckedContinuation { continuation in
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                continuation.resume(returning: granted)
-            }
-        }
+        let granted = await AVAudioApplication.requestRecordPermission()
         
         authorizationStatus = granted ? .authorized : .denied
         return granted

@@ -7,7 +7,7 @@ struct ForgotPasswordView: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 20) {
                 Spacer()
                 
@@ -70,7 +70,7 @@ struct ForgotPasswordView: View {
             .navigationTitle("Reset Password")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") {
                         dismiss()
                     }
@@ -91,8 +91,10 @@ struct ForgotPasswordView: View {
             do {
                 try await authService.resetPassword(email: email)
                 showingSuccess = true
+                HapticManager.shared.success()
             } catch {
                 // Error is handled in AuthenticationService
+                HapticManager.shared.error()
             }
         }
     }

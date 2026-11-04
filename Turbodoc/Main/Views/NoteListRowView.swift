@@ -30,7 +30,8 @@ struct NoteListRowView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(PlainButtonStyle())
+        // The default style gives the standard row highlight on tap.
+        .buttonStyle(.automatic)
         .contextMenu {
             contextMenuContent
         }
@@ -55,7 +56,6 @@ struct NoteListRowView: View {
         Divider()
         
         Button(role: .destructive) {
-            HapticManager.shared.warning()
             onDelete(note)
         } label: {
             Label("Delete", systemImage: "trash")
@@ -63,12 +63,11 @@ struct NoteListRowView: View {
     }
     
     private func copyContent() {
-        HapticManager.shared.selection()
         UIPasteboard.general.string = note.content
+        HapticManager.shared.success()
     }
     
     private func shareNote() {
-        HapticManager.shared.selection()
         let activityVC = UIActivityViewController(
             activityItems: [note.content],
             applicationActivities: nil

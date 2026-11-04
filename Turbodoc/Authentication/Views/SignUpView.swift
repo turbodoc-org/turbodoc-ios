@@ -8,7 +8,7 @@ struct SignUpView: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     // Title
@@ -104,7 +104,7 @@ struct SignUpView: View {
             .navigationTitle("Sign Up")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") {
                         dismiss()
                     }
@@ -135,6 +135,7 @@ struct SignUpView: View {
                 }
             } catch {
                 // Error is handled in AuthenticationService
+                HapticManager.shared.error()
             }
         }
     }

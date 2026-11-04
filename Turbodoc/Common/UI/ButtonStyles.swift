@@ -124,4 +124,42 @@ extension View {
     func ghostButtonStyle() -> some View {
         self.buttonStyle(GhostButtonStyle())
     }
+    
+    /// Circular floating action button surface: tinted Liquid Glass on
+    /// iOS 26+, a solid circle with a soft shadow before that.
+    func floatingActionButtonBackground(_ tint: Color) -> some View {
+        modifier(FloatingActionButtonBackground(tint: tint))
+    }
+}
+
+/// Press feedback for tappable cards (bookmark tiles, note cards): a slight
+/// shrink, like Apple's own card-style buttons.
+struct CardPressButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.spring(duration: 0.25), value: configuration.isPressed)
+    }
+}
+
+private struct FloatingActionButtonBackground: ViewModifier {
+    let tint: Color
+    
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.tint(tint).interactive(), in: .circle)
+        } else {
+            content
+                .background(
+                    Circle()
+                        .fill(tint)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        )
+                )
+                .shadow(color: tint.opacity(0.3), radius: 8, x: 0, y: 4)
+                .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
+        }
+    }
 }

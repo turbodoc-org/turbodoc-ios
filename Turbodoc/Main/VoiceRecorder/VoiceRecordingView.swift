@@ -12,7 +12,7 @@ struct VoiceRecordingView: View {
     @State private var hasSavedOnce = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 Color(.systemBackground)
                     .ignoresSafeArea()
@@ -126,7 +126,7 @@ struct VoiceRecordingView: View {
             .navigationTitle("Voice Note")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") {
                         recorder.reset()
                         dismiss()
@@ -208,6 +208,7 @@ struct VoiceRecordingView: View {
             await MainActor.run {
                 isTranscribing = false
                 if let finalText {
+                    HapticManager.shared.success()
                     onSave(finalText)
                     recorder.deleteRecordedAudio()
                     dismiss()
@@ -217,6 +218,7 @@ struct VoiceRecordingView: View {
                     transcriptionError
                     ?? "No speech was detected. Tap the microphone to record again, or tap the checkmark to retry."
                     showingError = true
+                    HapticManager.shared.error()
                 }
             }
         }

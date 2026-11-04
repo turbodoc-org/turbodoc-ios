@@ -82,27 +82,28 @@ class APIService {
         }
     }
     
-    func updateBookmark(_ bookmark: BookmarkItem) async throws -> BookmarkItem {
-        let endpoint = APIConfig.Endpoints.bookmarkById + bookmark.id.uuidString
-        let requestBody = APIBookmarkRequest(from: bookmark)
+    func updateBookmark(id: UUID, changes: BookmarkChanges) async throws -> BookmarkItem {
+        let endpoint = APIConfig.Endpoints.bookmarkById + id.uuidString.lowercased()
+        let bodyData = try networkService.encodeBody(APIBookmarkUpdateRequest(from: changes))
         
         do {
-            let bodyData = try networkService.encodeBody(requestBody)
             let response = try await networkService.performRequest(
                 endpoint: endpoint,
                 method: .PUT,
                 body: bodyData,
                 responseType: APIBookmarkUpdateResponse.self
             )
-            
             return response.data.toBookmarkItem()
         } catch {
-            throw APIError.networkError
+            AppLogger.network.error(
+                "Bookmark update failed: \(error.localizedDescription, privacy: .public)"
+            )
+            throw error
         }
     }
     
     func deleteBookmark(id: UUID) async throws {
-        let endpoint = APIConfig.Endpoints.bookmarkById + id.uuidString
+        let endpoint = APIConfig.Endpoints.bookmarkById + id.uuidString.lowercased()
         
         do {
             try await networkService.performRequest(
@@ -110,7 +111,10 @@ class APIService {
                 method: .DELETE
             )
         } catch {
-            throw APIError.networkError
+            AppLogger.network.error(
+                "Bookmark delete failed: \(error.localizedDescription, privacy: .public)"
+            )
+            throw error
         }
     }
     
@@ -363,13 +367,13 @@ class APIService {
 
 // MARK: - Supporting Models
 
-enum APIError: Error {
+enum APIError: LocalizedError {
     case networkError
     case invalidResponse
     case authenticationRequired
     case serverError(String)
     
-    var localizedDescription: String {
+    var errorDescription: String? {
         switch self {
         case .networkError:
             return "Network connection error"

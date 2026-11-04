@@ -27,6 +27,7 @@ struct EditNoteView: View {
     @State private var didDelete = false
     @State private var showingHistory = false
     @State private var isRestoring = false
+    @State private var editorController = MarkdownEditorController()
     
     let onSave: (NoteItem) async -> NoteSaveOutcome
     let onRestore: (NoteItem) -> Void
@@ -70,7 +71,7 @@ struct EditNoteView: View {
             
             Divider()
             
-            MarkdownEditor(text: $note.content)
+            MarkdownEditor(text: $note.content, controller: editorController)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 16)
                 .onChange(of: note.content) {
@@ -80,10 +81,12 @@ struct EditNoteView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 saveStatusLabel
                     .padding(.leading, 8)
                     .allowsHitTesting(false)
+                
+                MarkdownEditorHistoryButtons(controller: editorController)
                 
                 Menu {
                     Button {

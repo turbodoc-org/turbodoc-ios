@@ -124,10 +124,9 @@ class ShareViewController: UIViewController {
         // file so the main app can retry on next launch.
         Task {
             await syncBookmarkToRemote(data: data)
-
-            DispatchQueue.main.async { [weak self] in
-                self?.completeShare()
-            }
+            // Saved either way: synced now, or queued for the app to retry.
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            completeShare()
         }
     }
 

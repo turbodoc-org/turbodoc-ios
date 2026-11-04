@@ -1,8 +1,39 @@
 import SwiftUI
 import WebKit
 
+/// Drives the editor's undo history from native controls.
+@MainActor
+@Observable
+final class MarkdownEditorController {
+    fileprivate(set) var canUndo = false
+    fileprivate(set) var canRedo = false
+
+    fileprivate weak var webView: WKWebView?
+
+    func undo() {
+        guard canUndo else { return }
+        evaluate("window.turbodocEditor.undo();")
+    }
+
+    func redo() {
+        guard canRedo else { return }
+        evaluate("window.turbodocEditor.redo();")
+    }
+
+    private func evaluate(_ script: String) {
+        webView?.evaluateJavaScript(script) { _, error in
+            if let error {
+                AppLogger.editor.error(
+                    "Editor history command failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+    }
+}
+
 struct MarkdownEditor: UIViewRepresentable {
     @Binding var text: String
+    var controller: MarkdownEditorController?
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -15,6 +46,8 @@ struct MarkdownEditor: UIViewRepresentable {
         userContentController.add(context.coordinator, name: Message.markdown)
         userContentController.add(context.coordinator, name: Message.ready)
         userContentController.add(context.coordinator, name: Message.log)
+        userContentController.add(context.coordinator, name: Message.history)
+        userContentController.add(context.coordinator, name: Message.haptic)
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = userContentController
@@ -37,12 +70,14 @@ struct MarkdownEditor: UIViewRepresentable {
         webView.scrollView.contentInsetAdjustmentBehavior = .never
 
         context.coordinator.webView = webView
+        controller?.webView = webView
         context.coordinator.loadEditor()
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.parent = self
+        controller?.webView = webView
         context.coordinator.updateAppearance(colorScheme)
         context.coordinator.updateMarkdownIfNeeded(text)
     }
@@ -71,12 +106,20 @@ struct MarkdownEditor: UIViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(
             forName: Message.log
         )
+        webView.configuration.userContentController.removeScriptMessageHandler(
+            forName: Message.history
+        )
+        webView.configuration.userContentController.removeScriptMessageHandler(
+            forName: Message.haptic
+        )
     }
 
     private enum Message {
         static let markdown = "turbodocMarkdown"
         static let ready = "turbodocReady"
         static let log = "turbodocLog"
+        static let history = "turbodocHistory"
+        static let haptic = "turbodocHaptic"
     }
 
     @MainActor
@@ -153,6 +196,14 @@ struct MarkdownEditor: UIViewRepresentable {
                     parent.text = markdown
                 }
 
+            case Message.history:
+                let payload = message.body as? [String: Any]
+                parent.controller?.canUndo = payload?["canUndo"] as? Bool ?? false
+                parent.controller?.canRedo = payload?["canRedo"] as? Bool ?? false
+
+            case Message.haptic:
+                HapticManager.shared.selection()
+
             case Message.log:
                 let payload = message.body as? [String: Any]
                 let message = payload?["message"] as? String ?? "Unknown JavaScript error"
@@ -216,5 +267,26 @@ struct MarkdownEditor: UIViewRepresentable {
             }
             return String(json.dropFirst().dropLast())
         }
+    }
+}
+
+/// Undo / redo toolbar buttons for a `MarkdownEditor`.
+struct MarkdownEditorHistoryButtons: View {
+    let controller: MarkdownEditorController
+
+    var body: some View {
+        Button {
+            controller.undo()
+        } label: {
+            Label("Undo", systemImage: "arrow.uturn.backward")
+        }
+        .disabled(!controller.canUndo)
+
+        Button {
+            controller.redo()
+        } label: {
+            Label("Redo", systemImage: "arrow.uturn.forward")
+        }
+        .disabled(!controller.canRedo)
     }
 }

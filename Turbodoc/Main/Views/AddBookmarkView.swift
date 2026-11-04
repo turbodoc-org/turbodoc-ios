@@ -11,7 +11,7 @@ struct AddBookmarkView: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Title (Optional)")
@@ -37,7 +37,7 @@ struct AddBookmarkView: View {
                                 saveBookmark()
                             }
                         }
-                        .onChange(of: urlText) { newValue in
+                        .onChange(of: urlText) { _, newValue in
                             validateURL(newValue)
                         }
                     
@@ -57,13 +57,13 @@ struct AddBookmarkView: View {
             .navigationTitle("Add Bookmark")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") {
                         dismiss()
                     }
                 }
                 
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
                         shouldProcessTags = true
                         // Give a moment for the state change to propagate

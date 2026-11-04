@@ -7,26 +7,17 @@ struct MainTabView: View {
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            HomeView()
-                .tabItem {
-                    Image(systemName: "bookmark.fill")
-                    Text("Bookmarks")
-                }
-                .tag(0)
+            Tab("Bookmarks", systemImage: "bookmark.fill", value: 0) {
+                HomeView()
+            }
             
-            NotesView()
-                .tabItem {
-                    Image(systemName: "text.justify")
-                    Text("Notes")
-                }
-                .tag(1)
+            Tab("Notes", systemImage: "text.justify", value: 1) {
+                NotesView()
+            }
             
-            ProfileView()
-                .tabItem {
-                    Image(systemName: "person.fill")
-                    Text("Profile")
-                }
-                .tag(2)
+            Tab("Profile", systemImage: "person.fill", value: 2) {
+                ProfileView()
+            }
         }
         .onChange(of: quickActionService.currentAction) { _, action in
             switch action {

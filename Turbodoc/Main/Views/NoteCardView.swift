@@ -6,37 +6,42 @@ struct NoteCardView: View {
     let onDelete: (NoteItem) -> Void
     let onToggleFavorite: (NoteItem) -> Void
     
-    @State private var isPressed = false
-    
     var body: some View {
-        cardContent
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .aspectRatio(1, contentMode: .fit) // Keep square aspect ratio
-            .background(cardBackground)
-            .overlay(alignment: .topTrailing) {
-                favoriteButton
+        Button {
+            onEdit(note)
+        } label: {
+            cardContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .aspectRatio(1, contentMode: .fit) // Keep square aspect ratio
+                .background(cardBackground)
+        }
+        .buttonStyle(CardPressButtonStyle())
+        .overlay(alignment: .topTrailing) {
+            favoriteButton
+        }
+        .shadow(color: Color.black.opacity(0.1), radius: 6, x: 0, y: 3)
+        // Lift the card itself (not a rectangle) when the context menu opens.
+        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 20))
+        .contextMenu {
+            Button {
+                onToggleFavorite(note)
+            } label: {
+                Label(
+                    note.isFavorite ? "Unfavorite" : "Favorite",
+                    systemImage: note.isFavorite ? "star.slash" : "star"
+                )
             }
-            .scaleEffect(isPressed ? 0.95 : 1.0)
-            .shadow(
-                color: Color.black.opacity(0.1),
-                radius: isPressed ? 2 : 6,
-                x: 0,
-                y: isPressed ? 1 : 3
-            )
-            .animation(.easeInOut(duration: 0.15), value: isPressed)
-            .onTapGesture {
-                HapticManager.shared.light()
-                onEdit(note)
-            }
-            .onLongPressGesture(minimumDuration: 0.5) {
-                HapticManager.shared.medium()
+            
+            Button(role: .destructive) {
                 onDelete(note)
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
+        }
     }
     
     private var favoriteButton: some View {
         Button(action: {
-            HapticManager.shared.light()
             onToggleFavorite(note)
         }) {
             Image(systemName: note.isFavorite ? "star.fill" : "star")
@@ -83,8 +88,8 @@ struct NoteCardView: View {
         RoundedRectangle(cornerRadius: 20)
             .fill(Color(.systemBackground))
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color(.systemGray3), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20)
+                    .strokeBorder(Color(.systemGray3), lineWidth: 1)
             )
     }
     

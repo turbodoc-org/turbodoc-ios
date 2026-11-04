@@ -18,6 +18,25 @@ struct APIBookmarkRequest: Codable {
     }
 }
 
+/// Partial bookmark update: only the fields that are set are sent. The API
+/// treats any `url` in the body as a URL change (clearing the summary and
+/// re-crawling the page), so toggling a favorite must not resend it.
+struct APIBookmarkUpdateRequest: Codable {
+    let title: String?
+    let url: String?
+    let tags: String?
+    let status: String?
+    let is_favorite: Bool?
+    
+    init(from changes: BookmarkChanges) {
+        self.title = changes.title
+        self.url = changes.url
+        self.tags = changes.tags?.joined(separator: "|")
+        self.status = changes.status?.rawValue
+        self.is_favorite = changes.isFavorite
+    }
+}
+
 struct APIBookmarkResponse: Codable {
     let id: String
     let user_id: String
@@ -30,10 +49,13 @@ struct APIBookmarkResponse: Codable {
     let updated_at: String
     let ogImage: String?
     let is_favorite: Bool?
+    let link_status: String?
+    let link_status_code: Int?
+    let link_error: String?
     
     enum CodingKeys: String, CodingKey {
         case id, user_id, title, url, time_added, tags, status, created_at, updated_at, ogImage,
-             is_favorite
+             is_favorite, link_status, link_status_code, link_error
     }
     
     var tagsList: [String] {
@@ -60,6 +82,9 @@ struct APIBookmarkResponse: Codable {
         bookmark.status = BookmarkItem.ItemStatus(rawValue: status) ?? .unread
         bookmark.ogImageURL = ogImage
         bookmark.isFavorite = is_favorite ?? false
+        bookmark.linkStatus = link_status.flatMap(BookmarkItem.LinkStatus.init(rawValue:))
+        bookmark.linkStatusCode = link_status_code
+        bookmark.linkError = link_error
         
         return bookmark
     }

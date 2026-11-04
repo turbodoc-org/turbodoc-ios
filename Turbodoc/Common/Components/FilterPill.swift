@@ -4,6 +4,7 @@ struct FilterPill: View {
     let title: String
     let count: Int?
     let isSelected: Bool
+    var tint: Color = .blue
     let action: () -> Void
     
     var body: some View {
@@ -25,7 +26,7 @@ struct FilterPill: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(
-                isSelected ? Color.blue : Color(.systemGray6)
+                isSelected ? tint : Color(.systemGray6)
             )
             .foregroundColor(isSelected ? .white : .primary)
             .clipShape(Capsule())
@@ -43,32 +44,47 @@ struct FilterPillsBar: View {
         let id: String
         let title: String
         let count: Int?
+        let tint: Color
         
-        init(id: String, title: String, count: Int? = nil) {
+        init(id: String, title: String, count: Int? = nil, tint: Color = .blue) {
             self.id = id
             self.title = title
             self.count = count
+            self.tint = tint
         }
     }
     
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                ForEach(filters) { filter in
-                    FilterPill(
-                        title: filter.title,
-                        count: filter.count,
-                        isSelected: selectedFilter == filter.id,
-                        action: {
-                            onSelect(filter.id)
-                        }
-                    )
-                }
+        // A second scroll view on screen stops tap-the-status-bar from
+        // scrolling the list to the top, so only scroll when the pills don't
+        // fit (large Dynamic Type sizes).
+        ViewThatFits(in: .horizontal) {
+            pills
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                pills
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .scrollClipDisabled()
         }
-        .background(Color(.systemBackground))
+    }
+    
+    private var pills: some View {
+        HStack(spacing: 12) {
+            ForEach(filters) { filter in
+                FilterPill(
+                    title: filter.title,
+                    count: filter.count,
+                    isSelected: selectedFilter == filter.id,
+                    tint: filter.tint,
+                    action: {
+                        onSelect(filter.id)
+                    }
+                )
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
